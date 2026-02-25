@@ -11,13 +11,13 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { join } from "node:path";
 
-// Import directly from core source files because the core barrel export
-// (repograph-core/src/index.ts) may not be fully wired yet.
-import { createDatabase } from "repograph-core/src/store/db";
-import { StoreQueries } from "repograph-core/src/store/queries";
-import { GraphQueries } from "repograph-core/src/graph/refs";
-import { ImpactAnalyzer } from "repograph-core/src/graph/impact";
-import { ModuleGraph } from "repograph-core/src/graph/modules";
+import {
+  createDatabase,
+  StoreQueries,
+  GraphQueries,
+  ImpactAnalyzer,
+  ModuleGraph,
+} from "repograph-core";
 
 // ── Bootstrap core services ──────────────────────────────────────────
 
