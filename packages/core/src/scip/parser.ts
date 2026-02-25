@@ -6,35 +6,49 @@ import type { StoreQueries } from "../store/queries";
 /**
  * Extract a human-readable name from a SCIP symbol string.
  *
- * SCIP symbols look like:
- *   "scip-typescript npm @types/node 18.0.0 fs/`readFileSync`()."
- *   "npm . pkg . MyClass#"
+ * SCIP symbol format:
+ *   "scip-typescript npm repograph-core 0.1.0 src/store/`db.ts`/createDatabase()."
+ *   "scip-typescript npm repograph-core 0.1.0 src/store/`queries.ts`/StoreQueries#"
+ *   "scip-typescript npm repograph-core 0.1.0 src/store/`queries.ts`/StoreQueries#upsertFile()."
  *
- * Strategy: split on spaces, slashes, and dots, then look for backtick-quoted
- * descriptors first (these are the actual identifiers), falling back to the
- * last non-trivial segment.
+ * Descriptors use suffixes: . (term), # (type), () (method params)
+ * Backtick-quoted segments are file/namespace names, NOT symbol names.
+ * The actual symbol name is the last unquoted descriptor.
  */
 function extractSymbolName(scipSymbol: string): string {
-  // First try to find backtick-quoted names (SCIP descriptor syntax)
-  const backtickMatch = scipSymbol.match(/`([^`]+)`/g);
-  if (backtickMatch && backtickMatch.length > 0) {
-    // Take the last backtick-quoted name and strip backticks
-    const last = backtickMatch[backtickMatch.length - 1];
-    return last.replace(/`/g, "");
+  // Match all descriptors: sequences of word chars followed by a suffix (., #, (), [])
+  // This finds things like "createDatabase().", "StoreQueries#", "upsertFile()."
+  const descriptorRe = /(?<=\/|#)([A-Za-z_$][A-Za-z0-9_$]*)(?:\(\))?[.#]/g;
+  const matches: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = descriptorRe.exec(scipSymbol)) !== null) {
+    matches.push(m[1]);
+  }
+  if (matches.length > 0) {
+    return matches[matches.length - 1];
   }
 
-  // Fallback: split on delimiters and pick the last meaningful part
-  const parts = scipSymbol.split(/[\s./]/);
+  // Try backtick-quoted names as fallback (e.g. `<constructor>`)
+  const backtickMatches = scipSymbol.match(/`([^`]+)`/g);
+  if (backtickMatches) {
+    const last = backtickMatches[backtickMatches.length - 1].replace(/`/g, "");
+    // Skip file-like names (contain dots suggesting extensions)
+    if (!last.includes(".")) return last;
+  }
+
+  // Last resort: split and pick last meaningful part
+  const parts = scipSymbol.split(/[\s/]/);
   const last = parts
     .filter(
       (p) =>
         p.length > 0 &&
+        !p.startsWith("`") &&
         p !== "#" &&
         p !== "()" &&
-        !p.match(/^\d+\.\d+\.\d+$/), // skip version numbers
+        !p.match(/^\d+\.\d+\.\d+$/),
     )
     .pop();
-  return last?.replace(/[()#]/g, "") || scipSymbol;
+  return last?.replace(/[()#.]/g, "") || scipSymbol;
 }
 
 /**
@@ -106,10 +120,11 @@ export class ScipParser {
 
     for (const doc of index.documents || []) {
       const filePath = doc.relativePath;
+      const existingFile = store.getFile(filePath);
       store.upsertFile({
         path: filePath,
         language: doc.language || "unknown",
-        hash: "",
+        hash: existingFile?.hash || "",
       });
       store.clearOccurrencesForFile(filePath);
       filesIngested++;

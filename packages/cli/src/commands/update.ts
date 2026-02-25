@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "fs";
+import { readdirSync, readFileSync, statSync } from "fs";
 import { join, relative, extname } from "path";
 import {
   extractImports,
@@ -30,23 +30,28 @@ function walkSourceFiles(
   repoRoot: string,
 ): { path: string; fullPath: string; ext: string; hash: string }[] {
   const results: { path: string; fullPath: string; ext: string; hash: string }[] = [];
-  let entries;
+  let entries: string[];
   try {
-    entries = readdirSync(dir, { withFileTypes: true });
+    entries = readdirSync(dir) as string[];
   } catch {
     return results;
   }
 
-  for (const entry of entries) {
-    const name = String(entry.name);
-    if (entry.isDirectory()) {
+  for (const name of entries) {
+    const fullPath = join(dir, name);
+    let stat;
+    try {
+      stat = statSync(fullPath);
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory()) {
       if (!SKIP_DIRS.has(name) && !name.startsWith(".")) {
-        results.push(...walkSourceFiles(join(dir, name), repoRoot));
+        results.push(...walkSourceFiles(fullPath, repoRoot));
       }
-    } else if (entry.isFile()) {
+    } else if (stat.isFile()) {
       const ext = extname(name);
       if (SOURCE_EXTENSIONS.has(ext)) {
-        const fullPath = join(dir, name);
         const content = readFileSync(fullPath);
         const hash = hashContent(content);
         results.push({ path: relative(repoRoot, fullPath), fullPath, ext, hash });

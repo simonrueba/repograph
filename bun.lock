@@ -5,6 +5,7 @@
     "": {
       "name": "repograph",
       "devDependencies": {
+        "bun-types": "^1.3.9",
         "typescript": "^5.7.0",
         "vitest": "^3.0.0",
       },

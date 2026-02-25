@@ -9,8 +9,12 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "outDir": "dist",
-    "rootDir": "src",
     "types": ["bun-types"]
-  }
+  },
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/cli" },
+    { "path": "packages/mcp" }
+  ],
+  "include": []
 }

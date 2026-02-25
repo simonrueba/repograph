@@ -36,20 +36,26 @@ function hashFile(fullPath: string): string {
 function walkSourceFiles(dir: string, repoRoot: string): { path: string; hash: string }[] {
   const results: { path: string; hash: string }[] = [];
 
-  let entries: ReturnType<typeof readdirSync>;
+  let entries: string[];
   try {
-    entries = readdirSync(dir, { withFileTypes: true });
+    entries = readdirSync(dir) as string[];
   } catch {
     return results;
   }
 
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      if (!shouldSkipDir(entry.name)) {
-        results.push(...walkSourceFiles(join(dir, entry.name), repoRoot));
+  for (const name of entries) {
+    const fullPath = join(dir, name);
+    let stat;
+    try {
+      stat = statSync(fullPath);
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory()) {
+      if (!shouldSkipDir(name)) {
+        results.push(...walkSourceFiles(fullPath, repoRoot));
       }
-    } else if (entry.isFile() && isSourceFile(entry.name)) {
-      const fullPath = join(dir, entry.name);
+    } else if (stat.isFile() && isSourceFile(name)) {
       const relPath = relative(repoRoot, fullPath);
       results.push({ path: relPath, hash: hashFile(fullPath) });
     }
