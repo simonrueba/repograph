@@ -1,6 +1,6 @@
 # RepoGraph
 
-Semantic code index and gatekeeper for AI coding agents. Builds a compiler-grade dependency graph of your codebase using [SCIP](https://sourcegraph.com/docs/code-intelligence/scip) and exposes it via CLI and MCP tools.
+Semantic code index and gatekeeper for AI coding agents. Builds a compiler-grade symbol graph (defs/refs) via [SCIP](https://sourcegraph.com/docs/code-intelligence/scip) and a file-level dependency graph via import extraction. Exposes queries via CLI and MCP tools.
 
 No LLMs involved — just static analysis.
 
@@ -62,16 +62,15 @@ All commands output JSON. Symbol IDs are SCIP symbol strings returned by `search
 
 ## MCP server
 
-Register in your Claude Code settings:
+Add `.mcp.json` to your project root:
 
 ```json
 {
   "mcpServers": {
     "repograph": {
-      "type": "stdio",
       "command": "bun",
       "args": ["run", "packages/mcp/src/index.ts"],
-      "env": { "REPOGRAPH_ROOT": "${workspaceFolder}" }
+      "env": { "REPOGRAPH_ROOT": "${PWD}" }
     }
   }
 }
@@ -89,16 +88,34 @@ Add to `.claude/settings.json` to auto-update the index on edits and gate comple
     "PostToolUse": [
       {
         "matcher": "Edit|Write|NotebookEdit",
-        "command": "packages/cli/src/hooks/post-edit.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/packages/cli/src/hooks/post-edit.sh",
+            "timeout": 120
+          }
+        ]
       },
       {
         "matcher": "Bash",
-        "command": "packages/cli/src/hooks/post-test.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/packages/cli/src/hooks/post-test.sh",
+            "timeout": 30
+          }
+        ]
       }
     ],
     "Stop": [
       {
-        "command": "packages/cli/src/hooks/stop-verify.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/packages/cli/src/hooks/stop-verify.sh",
+            "timeout": 600
+          }
+        ]
       }
     ]
   }
@@ -106,8 +123,8 @@ Add to `.claude/settings.json` to auto-update the index on edits and gate comple
 ```
 
 - **Post-edit hook**: runs `repograph update` and logs the edit to the ledger
-- **Post-test hook**: detects test runner commands and logs `test_run` to the ledger
-- **Stop hook**: runs full SCIP re-index + `repograph verify`. If verification fails, the agent sees the failure report and must address issues before completing.
+- **Post-test hook**: reads `tool_input.command` from stdin, logs `test_run` to the ledger if it matches a test runner
+- **Stop hook**: runs full SCIP re-index + `repograph verify`. On failure, outputs `{"decision":"block","reason":"..."}` to prevent Claude from stopping until issues are fixed. Checks `stop_hook_active` from stdin to prevent infinite loops.
 
 ## Gatekeeper checks
 
