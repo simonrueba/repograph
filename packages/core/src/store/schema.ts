@@ -1,0 +1,48 @@
+export const SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS files (
+  path        TEXT PRIMARY KEY,
+  language    TEXT NOT NULL,
+  hash        TEXT NOT NULL,
+  indexed_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS symbols (
+  id          TEXT PRIMARY KEY,
+  kind        TEXT,
+  name        TEXT NOT NULL,
+  file_path   TEXT,
+  range_start INTEGER,
+  range_end   INTEGER,
+  doc         TEXT
+);
+
+CREATE TABLE IF NOT EXISTS occurrences (
+  file_path   TEXT NOT NULL,
+  range_start INTEGER NOT NULL,
+  range_end   INTEGER NOT NULL,
+  symbol_id   TEXT NOT NULL,
+  roles       INTEGER NOT NULL,
+  PRIMARY KEY (file_path, range_start, symbol_id)
+);
+
+CREATE TABLE IF NOT EXISTS edges (
+  source      TEXT NOT NULL,
+  target      TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  confidence  TEXT DEFAULT 'high'
+);
+
+CREATE TABLE IF NOT EXISTS ledger (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  timestamp   INTEGER NOT NULL,
+  event       TEXT NOT NULL,
+  data        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_occurrences_symbol ON occurrences(symbol_id);
+CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source);
+CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target);
+CREATE INDEX IF NOT EXISTS idx_edges_kind ON edges(kind);
+CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
+CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path);
+`;
