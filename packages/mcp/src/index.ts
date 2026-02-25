@@ -1,0 +1,2 @@
+// repograph-mcp
+export {};

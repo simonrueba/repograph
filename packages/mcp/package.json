@@ -1,0 +1,19 @@
+{
+  "name": "repograph-mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "repograph-core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.27.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "bun-types": "latest"
+  }
+}
