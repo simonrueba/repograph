@@ -1,0 +1,208 @@
+import type { RepographDB } from "./db";
+
+// ── Record types ─────────────────────────────────────────────────────
+
+export interface FileRecord {
+  path: string;
+  language: string;
+  hash: string;
+  indexed_at?: number;
+}
+
+export interface SymbolRecord {
+  id: string;
+  kind?: string;
+  name: string;
+  file_path?: string;
+  range_start?: number;
+  range_end?: number;
+  doc?: string;
+}
+
+export interface OccurrenceRecord {
+  file_path: string;
+  range_start: number;
+  range_end: number;
+  symbol_id: string;
+  roles: number;
+}
+
+export interface EdgeRecord {
+  source: string;
+  target: string;
+  kind: string;
+  confidence?: string;
+}
+
+// ── Query layer ──────────────────────────────────────────────────────
+
+export class StoreQueries {
+  constructor(private db: RepographDB) {}
+
+  // ── Files ────────────────────────────────────────────────────────
+
+  upsertFile(file: Omit<FileRecord, "indexed_at">): void {
+    this.db
+      .query(
+        `INSERT INTO files (path, language, hash, indexed_at)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(path) DO UPDATE SET
+           language   = excluded.language,
+           hash       = excluded.hash,
+           indexed_at = excluded.indexed_at`,
+      )
+      .run(file.path, file.language, file.hash, Date.now());
+  }
+
+  getFile(path: string): FileRecord | null {
+    return (
+      (this.db
+        .query("SELECT path, language, hash, indexed_at FROM files WHERE path = ?1")
+        .get(path) as FileRecord | null) ?? null
+    );
+  }
+
+  getAllFiles(): FileRecord[] {
+    return this.db
+      .query("SELECT path, language, hash, indexed_at FROM files")
+      .all() as FileRecord[];
+  }
+
+  findStaleFiles(entries: { path: string; hash: string }[]): string[] {
+    const stale: string[] = [];
+    const stmt = this.db.query("SELECT hash FROM files WHERE path = ?1");
+
+    for (const entry of entries) {
+      const row = stmt.get(entry.path) as { hash: string } | null;
+      if (row === null || row.hash !== entry.hash) {
+        stale.push(entry.path);
+      }
+    }
+
+    return stale;
+  }
+
+  deleteFile(path: string): void {
+    this.db.query("DELETE FROM files WHERE path = ?1").run(path);
+  }
+
+  // ── Symbols ──────────────────────────────────────────────────────
+
+  upsertSymbol(symbol: SymbolRecord): void {
+    this.db
+      .query(
+        `INSERT INTO symbols (id, kind, name, file_path, range_start, range_end, doc)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(id) DO UPDATE SET
+           kind        = excluded.kind,
+           name        = excluded.name,
+           file_path   = excluded.file_path,
+           range_start = excluded.range_start,
+           range_end   = excluded.range_end,
+           doc         = excluded.doc`,
+      )
+      .run(
+        symbol.id,
+        symbol.kind ?? null,
+        symbol.name,
+        symbol.file_path ?? null,
+        symbol.range_start ?? null,
+        symbol.range_end ?? null,
+        symbol.doc ?? null,
+      );
+  }
+
+  getSymbol(id: string): SymbolRecord | null {
+    return (
+      (this.db
+        .query(
+          "SELECT id, kind, name, file_path, range_start, range_end, doc FROM symbols WHERE id = ?1",
+        )
+        .get(id) as SymbolRecord | null) ?? null
+    );
+  }
+
+  searchSymbols(query: string): SymbolRecord[] {
+    return this.db
+      .query(
+        "SELECT id, kind, name, file_path, range_start, range_end, doc FROM symbols WHERE name LIKE ?1",
+      )
+      .all(`%${query}%`) as SymbolRecord[];
+  }
+
+  // ── Occurrences ──────────────────────────────────────────────────
+
+  upsertOccurrence(occ: OccurrenceRecord): void {
+    this.db
+      .query(
+        `INSERT OR REPLACE INTO occurrences (file_path, range_start, range_end, symbol_id, roles)
+         VALUES (?1, ?2, ?3, ?4, ?5)`,
+      )
+      .run(occ.file_path, occ.range_start, occ.range_end, occ.symbol_id, occ.roles);
+  }
+
+  getOccurrencesBySymbol(symbolId: string): OccurrenceRecord[] {
+    return this.db
+      .query(
+        "SELECT file_path, range_start, range_end, symbol_id, roles FROM occurrences WHERE symbol_id = ?1",
+      )
+      .all(symbolId) as OccurrenceRecord[];
+  }
+
+  getOccurrencesByFile(filePath: string): OccurrenceRecord[] {
+    return this.db
+      .query(
+        "SELECT file_path, range_start, range_end, symbol_id, roles FROM occurrences WHERE file_path = ?1",
+      )
+      .all(filePath) as OccurrenceRecord[];
+  }
+
+  clearOccurrencesForFile(filePath: string): void {
+    this.db
+      .query("DELETE FROM occurrences WHERE file_path = ?1")
+      .run(filePath);
+  }
+
+  // ── Edges ────────────────────────────────────────────────────────
+
+  insertEdge(edge: EdgeRecord): void {
+    this.db
+      .query(
+        `INSERT INTO edges (source, target, kind, confidence)
+         VALUES (?1, ?2, ?3, ?4)`,
+      )
+      .run(edge.source, edge.target, edge.kind, edge.confidence ?? "high");
+  }
+
+  getEdgesBySource(source: string): EdgeRecord[] {
+    return this.db
+      .query(
+        "SELECT source, target, kind, confidence FROM edges WHERE source = ?1",
+      )
+      .all(source) as EdgeRecord[];
+  }
+
+  getEdgesByTarget(target: string): EdgeRecord[] {
+    return this.db
+      .query(
+        "SELECT source, target, kind, confidence FROM edges WHERE target = ?1",
+      )
+      .all(target) as EdgeRecord[];
+  }
+
+  clearEdgesForFile(source: string): void {
+    this.db.query("DELETE FROM edges WHERE source = ?1").run(source);
+  }
+
+  clearAllEdges(): void {
+    this.db.exec("DELETE FROM edges");
+  }
+
+  clearAllSymbols(): void {
+    this.db.exec("DELETE FROM symbols");
+  }
+
+  clearAllOccurrences(): void {
+    this.db.exec("DELETE FROM occurrences");
+  }
+}
