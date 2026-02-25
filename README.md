@@ -124,7 +124,7 @@ Add to `.claude/settings.json` to auto-update the index on edits and gate comple
 
 - **Post-edit hook**: runs `repograph update` and logs the edit to the ledger
 - **Post-test hook**: reads `tool_input.command` from stdin, logs `test_run` to the ledger if it matches a test runner
-- **Stop hook**: runs full SCIP re-index + `repograph verify`. On failure, outputs `{"decision":"block","reason":"..."}` to prevent Claude from stopping until issues are fixed. Checks `stop_hook_active` from stdin to prevent infinite loops.
+- **Stop hook**: runs structural `repograph update`, then a full SCIP re-index only if files are dirty, then `repograph verify`. On failure, outputs `{"decision":"block","reason":"..."}` to prevent Claude from stopping until issues are fixed. Checks `stop_hook_active` from stdin to prevent infinite loops.
 
 ## Gatekeeper checks
 
@@ -132,16 +132,16 @@ Add to `.claude/settings.json` to auto-update the index on edits and gate comple
 
 1. **Index freshness** — every source file on disk is hashed and compared to the stored hash. Fails if any file changed since last index.
 2. **Missing test runs** — checks the ledger for a `test_run` event after the most recent `edit`. Fails if no tests were run after editing.
-3. **Unupdated references** — (placeholder) will detect when a function signature changes but callers aren't updated.
+3. **Typecheck** — runs `tsc --noEmit` against the repo's `tsconfig.json`. Fails on any type errors. Skipped if no `tsconfig.json` exists.
 
 ## How indexing works
 
 Two-pass pipeline:
 
-1. **Structural pass** (instant, per-file) — regex-based extraction of `import`/`export`/`from` statements. Creates file-level `imports` edges.
-2. **SCIP pass** (slower, full project) — runs `scip-typescript` as a subprocess, producing a protobuf index. The parser decodes it and extracts symbols, occurrences (with line:col ranges), and definition/reference roles. Creates symbol-level `defines` and `references` edges.
+1. **Structural pass** (instant, per-file) — regex-based extraction of `import`/`export`/`from` statements. Creates file-level `imports` edges. Runs on every `update`.
+2. **SCIP pass** (slower, full project) — runs `scip-typescript` as a subprocess, producing a protobuf index. The parser decodes it and extracts symbols, occurrences (with line:col ranges), and definition/reference roles. Creates symbol-level `defines` and `references` edges. Runs on `index` and `update --full` only.
 
-Both passes write to the same SQLite database (`.repograph/index.db`).
+Both passes write to the same SQLite database (`.repograph/index.db`). This means the module graph updates immediately after edits, but symbol-level queries (search, refs, impact) may lag until the next full SCIP pass.
 
 ## Project structure
 

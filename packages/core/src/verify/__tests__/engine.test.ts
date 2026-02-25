@@ -8,7 +8,7 @@ import { Ledger } from "../../ledger/ledger";
 import { VerifyEngine, type VerifyReport } from "../engine";
 import { checkIndexFreshness } from "../checks/index-freshness";
 import { checkMissingTests } from "../checks/missing-tests";
-import { checkUnupdatedRefs } from "../checks/unupdated-refs";
+import { checkTypecheck } from "../checks/typecheck";
 
 describe("VerifyEngine", () => {
   let db: RepographDB;
@@ -151,13 +151,37 @@ describe("VerifyEngine", () => {
     });
   });
 
-  // ── unupdated-refs check ────────────────────────────────────────────
+  // ── typecheck check ─────────────────────────────────────────────────
 
-  describe("checkUnupdatedRefs", () => {
-    it("should always pass (MVP placeholder)", () => {
-      const result = checkUnupdatedRefs(queries);
+  describe("checkTypecheck", () => {
+    it("should pass when no tsconfig.json exists", () => {
+      const result = checkTypecheck(repoRoot);
       expect(result.passed).toBe(true);
       expect(result.issues).toHaveLength(0);
+    });
+
+    it("should pass for valid TypeScript", () => {
+      writeSourceFile("tsconfig.json", JSON.stringify({
+        compilerOptions: { strict: true, noEmit: true, skipLibCheck: true },
+        include: ["src"],
+      }));
+      writeSourceFile("src/valid.ts", "export const x: number = 1;");
+
+      const result = checkTypecheck(repoRoot);
+      expect(result.passed).toBe(true);
+    });
+
+    it("should fail for invalid TypeScript", () => {
+      writeSourceFile("tsconfig.json", JSON.stringify({
+        compilerOptions: { strict: true, noEmit: true, skipLibCheck: true },
+        include: ["src"],
+      }));
+      writeSourceFile("src/invalid.ts", "export const x: number = 'not a number';");
+
+      const result = checkTypecheck(repoRoot);
+      expect(result.passed).toBe(false);
+      expect(result.issues.length).toBeGreaterThan(0);
+      expect(result.issues[0].type).toBe("TYPE_ERROR");
     });
   });
 
@@ -179,7 +203,7 @@ describe("VerifyEngine", () => {
       expect(report.status).toBe("OK");
       expect(report.checks.indexFreshness.passed).toBe(true);
       expect(report.checks.testCoverage.passed).toBe(true);
-      expect(report.checks.unupdatedRefs.passed).toBe(true);
+      expect(report.checks.typecheck.passed).toBe(true);
       expect(report.timestamp).toBeTypeOf("number");
     });
 
@@ -235,7 +259,7 @@ describe("VerifyEngine", () => {
       expect(report).toHaveProperty("summary");
       expect(report.checks).toHaveProperty("indexFreshness");
       expect(report.checks).toHaveProperty("testCoverage");
-      expect(report.checks).toHaveProperty("unupdatedRefs");
+      expect(report.checks).toHaveProperty("typecheck");
     });
   });
 });

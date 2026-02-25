@@ -2,7 +2,7 @@ import type { StoreQueries } from "../store/queries";
 import type { Ledger } from "../ledger/ledger";
 import { checkIndexFreshness } from "./checks/index-freshness";
 import { checkMissingTests } from "./checks/missing-tests";
-import { checkUnupdatedRefs } from "./checks/unupdated-refs";
+import { checkTypecheck } from "./checks/typecheck";
 
 export interface VerifyReport {
   status: "OK" | "FAIL";
@@ -10,7 +10,7 @@ export interface VerifyReport {
   checks: {
     indexFreshness: { passed: boolean; issues: unknown[] };
     testCoverage: { passed: boolean; issues: unknown[] };
-    unupdatedRefs: { passed: boolean; issues: unknown[] };
+    typecheck: { passed: boolean; issues: unknown[] };
   };
   summary: string;
 }
@@ -25,15 +25,15 @@ export class VerifyEngine {
   verify(): VerifyReport {
     const indexFreshness = checkIndexFreshness(this.store, this.repoRoot);
     const testCoverage = checkMissingTests(this.ledger);
-    const unupdatedRefs = checkUnupdatedRefs(this.store);
+    const typecheck = checkTypecheck(this.repoRoot);
 
     const allPassed =
-      indexFreshness.passed && testCoverage.passed && unupdatedRefs.passed;
+      indexFreshness.passed && testCoverage.passed && typecheck.passed;
 
     const failedNames: string[] = [];
     if (!indexFreshness.passed) failedNames.push("indexFreshness");
     if (!testCoverage.passed) failedNames.push("testCoverage");
-    if (!unupdatedRefs.passed) failedNames.push("unupdatedRefs");
+    if (!typecheck.passed) failedNames.push("typecheck");
 
     const summary = allPassed
       ? "all checks passed"
@@ -45,7 +45,7 @@ export class VerifyEngine {
       checks: {
         indexFreshness,
         testCoverage,
-        unupdatedRefs,
+        typecheck,
       },
       summary,
     };

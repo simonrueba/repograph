@@ -13,8 +13,12 @@ if echo "$INPUT" | grep -q '"stop_hook_active":true'; then
   exit 0
 fi
 
-# Run full update + verify
-bun run packages/cli/src/index.ts update --full 2>/dev/null
+# Run update — only full SCIP re-index if there are dirty files
+UPDATE_OUTPUT=$(bun run packages/cli/src/index.ts update 2>/dev/null) || true
+STALE_COUNT=$(echo "$UPDATE_OUTPUT" | grep -o '"staleFiles":[0-9]*' | grep -o '[0-9]*' || echo "0")
+if [ "$STALE_COUNT" -gt 0 ]; then
+  bun run packages/cli/src/index.ts update --full 2>/dev/null || true
+fi
 
 VERIFY_OUTPUT=$(bun run packages/cli/src/index.ts verify 2>&1) || true
 VERIFY_STATUS=$(echo "$VERIFY_OUTPUT" | grep -c 'REPOGRAPH_VERIFY: OK' || true)
