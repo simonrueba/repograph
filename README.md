@@ -8,21 +8,50 @@ No LLMs involved — just static analysis.
 
 - **Indexes** your codebase into a SQLite graph of symbols, references, imports, and definitions
 - **Queries** let you search symbols, jump to definitions, find all references, and trace impact of changes
-- **Verifies** repo consistency: stale index detection, missing test runs, unupdated references
+- **Verifies** repo consistency: stale index detection, empty index detection, missing test runs, type errors
 - **Integrates** with Claude Code via hooks (auto-update on edit, gatekeeper on stop) and MCP tools
+- **Works on any existing project** — run `setup` and it indexes everything from disk
 
 ## Quick start
 
+### Use on any project (recommended)
+
 ```bash
-# Install dependencies
+# Clone repograph
+git clone <repo-url> repograph && cd repograph
 bun install
 
-# Initialize in your repo
-bun run packages/cli/src/index.ts init
+# Set up on your project — does everything in one step:
+# init → index → generate hooks + MCP config
+bun run packages/cli/src/index.ts setup /path/to/your/project
+```
 
-# Build the index (runs scip-typescript + structural import extraction)
-bun run packages/cli/src/index.ts index
+This creates:
+- `.repograph/` — SQLite database, hook scripts, SCIP cache
+- `.claude/settings.json` — Claude Code hooks (auto-update + verify gate)
+- `.mcp.json` — MCP server config (8 read-only tools)
 
+Then restart Claude Code in your project to pick up the hooks and MCP server.
+
+### Manual setup (step by step)
+
+```bash
+# Initialize .repograph/ directory
+bun run packages/cli/src/index.ts init /path/to/your/project
+
+# Build the full index (structural imports + SCIP symbols)
+bun run packages/cli/src/index.ts index /path/to/your/project
+
+# Check prerequisites
+bun run packages/cli/src/index.ts doctor /path/to/your/project
+
+# Run gatekeeper checks
+bun run packages/cli/src/index.ts verify /path/to/your/project
+```
+
+### Query examples
+
+```bash
 # Search for a symbol
 bun run packages/cli/src/index.ts query search "MyFunction"
 
@@ -35,11 +64,14 @@ bun run packages/cli/src/index.ts query refs "<symbol-id>"
 # Impact analysis — what's affected by changes to a file?
 bun run packages/cli/src/index.ts query impact src/foo.ts
 
-# File dependency graph
+# File dependency graph (imports only)
 bun run packages/cli/src/index.ts query module-graph
 
-# Run gatekeeper checks
-bun run packages/cli/src/index.ts verify
+# Hybrid module graph (imports + SCIP semantic edges with weights)
+bun run packages/cli/src/index.ts query module-graph --mode hybrid
+
+# Scoped to a directory
+bun run packages/cli/src/index.ts query module-graph --path packages/core/
 ```
 
 All commands output JSON. Symbol IDs are SCIP symbol strings returned by `search`.
@@ -48,129 +80,136 @@ All commands output JSON. Symbol IDs are SCIP symbol strings returned by `search
 
 | Command | Description |
 |---------|-------------|
-| `init` | Create `.repograph/` directory and SQLite database |
-| `index` | Full index: structural imports + SCIP analysis |
+| `setup [path]` | One-command setup: init + index + generate hooks & MCP config |
+| `init [path]` | Create `.repograph/` directory and SQLite database |
+| `index [path]` | Full index: structural imports + SCIP analysis |
 | `update [--full]` | Incremental update (structural only, or `--full` for SCIP re-index) |
 | `query search <query>` | Fuzzy search symbols by name |
 | `query def <symbol-id>` | Get definition location, docs, and code snippet |
 | `query refs <symbol-id>` | Find all references across the codebase |
 | `query impact <path>...` | Changed files → impacted symbols → dependent files → recommended tests |
-| `query module-graph` | File-level import/export dependency graph |
+| `query module-graph [--mode] [--path] [--format]` | File dependency graph (imports, semantic, or hybrid) |
 | `verify` | Run gatekeeper checks (exit 0 = OK, exit 1 = FAIL) |
-| `status` | Index stats (file count, symbol count, edge count) |
+| `status` | Index stats (file count, symbol count, edge count, dirty count) |
+| `dirty mark <path>` | Mark a file as needing re-index |
 | `ledger log <event> <json>` | Append event to execution ledger |
+| `doctor [path]` | Check prerequisites (Bun, Node, scip-typescript, scip-python) |
 
 ## MCP server
 
-Add `.mcp.json` to your project root:
+The MCP server exposes 8 read-only tools for AI agents:
+
+| Tool | Description |
+|------|-------------|
+| `repograph.search_symbol` | Fuzzy search symbols by name |
+| `repograph.get_def` | Get symbol definition with docs and code snippet |
+| `repograph.find_refs` | Find all references to a symbol (optionally scoped) |
+| `repograph.impact` | Blast radius analysis for changed files |
+| `repograph.module_graph` | File dependency graph (imports/semantic/hybrid, json/dot/mermaid) |
+| `repograph.symbol_graph` | Dependency subgraph centered on a specific symbol |
+| `repograph.file_symbols` | List all symbols defined in a file |
+| `repograph.status` | Index stats: files, symbols, dirty count, timestamps |
+
+### Configuration
+
+`repograph setup` generates this automatically. To configure manually, add `.mcp.json` to your project root:
 
 ```json
 {
   "mcpServers": {
     "repograph": {
       "command": "bun",
-      "args": ["run", "packages/mcp/src/index.ts"],
-      "env": { "REPOGRAPH_ROOT": "${PWD}" }
+      "args": ["run", "/path/to/repograph/packages/mcp/src/index.ts"],
+      "env": { "REPOGRAPH_ROOT": "." }
     }
   }
 }
 ```
 
-Exposes 6 tools: `search_symbol`, `get_def`, `find_refs`, `impact`, `module_graph`, `status`. All read-only.
+The MCP server starts gracefully even if `.repograph/` doesn't exist yet — it creates the directory and logs a helpful message.
 
 ## Claude Code hooks
 
-Add to `.claude/settings.json` to auto-update the index on edits and gate completion on verification:
+`repograph setup` generates `.claude/settings.json` automatically. The hooks reference portable scripts in `.repograph/hooks/` that resolve the `repograph` binary dynamically at runtime.
 
-```json
-{
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/packages/cli/src/hooks/post-edit.sh",
-            "timeout": 120
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/packages/cli/src/hooks/post-test.sh",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/packages/cli/src/hooks/stop-verify.sh",
-            "timeout": 600
-          }
-        ]
-      }
-    ]
-  }
-}
-```
+### What the hooks do
 
-- **Post-edit hook**: runs `repograph update` and logs the edit to the ledger
-- **Post-test hook**: reads `tool_input.command` from stdin, logs `test_run` to the ledger if it matches a test runner
-- **Stop hook**: runs structural `repograph update`, then a full SCIP re-index only if files are dirty, then `repograph verify`. On failure, outputs `{"decision":"block","reason":"..."}` to prevent Claude from stopping until issues are fixed. Checks `stop_hook_active` from stdin to prevent infinite loops.
+- **Post-edit hook** (`Edit|Write` matcher): marks edited files dirty, runs `repograph update`, logs the edit to the ledger
+- **Post-test hook** (`Bash` matcher): detects test runner commands (vitest, jest, pytest, bun test, mocha, ava, cargo test, go test, playwright), logs `test_run` to the ledger
+- **Stop hook**: runs structural update, then full SCIP re-index if files are dirty, then `repograph verify`. On failure, outputs `{"decision":"block","reason":"..."}` to prevent Claude from stopping until issues are fixed
+
+The stop hook uses atomic `mkdir`-based locking to prevent concurrent runs, checks `stop_hook_active` from stdin to prevent infinite loops, and has a 120s stale lock timeout.
+
+All hooks guard against missing `.repograph/` — they silently exit if the project hasn't been initialized.
 
 ## Gatekeeper checks
 
-`repograph verify` runs three checks:
+`repograph verify` runs these checks:
 
-1. **Index freshness** — every source file on disk is hashed and compared to the stored hash. Fails if any file changed since last index.
-2. **Missing test runs** — checks the ledger for a `test_run` event after the most recent `edit`. Fails if no tests were run after editing.
-3. **Typecheck** — runs `tsc --noEmit` against the repo's `tsconfig.json`. Fails on any type errors. Skipped if no `tsconfig.json` exists.
+1. **Empty index** — fails if zero files are indexed (prevents vacuous pass on uninitialized projects)
+2. **Index freshness** — every source file on disk is hashed and compared to the stored hash. Fails if any file changed since last full SCIP index.
+3. **Missing test runs** — checks the ledger for a `test_run` event after the most recent `edit`. Fails if no tests were run after editing.
+4. **Typecheck** — runs `tsc --noEmit` against the repo's `tsconfig.json`. Fails on any type errors. On failure, includes recommendations with `repograph query impact` commands for the top error files. Skipped if no `tsconfig.json` exists.
 
 ## How indexing works
 
 Two-pass pipeline:
 
-1. **Structural pass** (instant, per-file) — regex-based extraction of `import`/`export`/`from` statements. Creates file-level `imports` edges. Runs on every `update`.
-2. **SCIP pass** (slower, full project) — runs `scip-typescript` as a subprocess, producing a protobuf index. The parser decodes it and extracts symbols, occurrences (with line:col ranges), and definition/reference roles. Creates symbol-level `defines` and `references` edges. Runs on `index` and `update --full` only.
+1. **Structural pass** (instant, per-file) — regex-based extraction of `import`/`export`/`from` statements, including side-effect imports (`import "module"`), dynamic imports (`import("module")`), and Python relative imports (`from . import`). Creates file-level `imports` edges. Runs on every `update`.
+2. **SCIP pass** (slower, full project) — runs `scip-typescript` or `scip-python` per detected sub-project, producing a protobuf index. The parser decodes it and extracts symbols, occurrences (with line:col ranges), and definition/reference roles. Creates symbol-level `defines` and `references` edges. Runs on `index` and `update --full` only.
 
-Both passes write to the same SQLite database (`.repograph/index.db`). This means the module graph updates immediately after edits, but symbol-level queries (search, refs, impact) may lag until the next full SCIP pass.
+Both passes write to the same SQLite database (`.repograph/index.db`). The database uses WAL mode, `busy_timeout=5000` for concurrent access from hooks, and transactions for atomic SCIP ingestion.
+
+### Multi-project support
+
+RepoGraph auto-detects sub-projects in monorepos by scanning for `tsconfig.json` and Python project files. Each sub-project is indexed independently with correct path prefixing so that SCIP-relative paths map correctly to repo-root-relative file paths.
+
+### Module graph modes
+
+The `module-graph` query supports three modes:
+
+- **imports** (default) — structural import edges only
+- **semantic** — SCIP-derived edges with occurrence weights (how many times symbols from file A are referenced in file B)
+- **hybrid** — union of both, with source tagging (`import`, `semantic`, or `import+semantic`)
+
+Output formats: `json` (default), `dot` (Graphviz), `mermaid`.
 
 ## Project structure
 
 ```
 packages/
-  core/     repograph-core library
+  core/     repograph-core library (275+ tests)
     src/
-      store/       SQLite schema + queries
+      store/       SQLite schema, queries, transactions
       scip/        protobuf parser + SCIP types
-      indexers/    scip-typescript, scip-python, import extractor
-      graph/       refs, impact analysis, module graph
-      verify/      gatekeeper engine + checks
+      indexers/    scip-typescript, scip-python, import extractor, project detector
+      graph/       refs, impact analysis, module graph (import/semantic/hybrid)
+      verify/      gatekeeper engine + checks (freshness, tests, typecheck)
       ledger/      execution event log
-  cli/      CLI command router
-  mcp/      MCP stdio server
+  cli/      CLI command router + hooks
+    src/
+      commands/    init, setup, index, update, query, verify, status, dirty, doctor, ledger
+      hooks/       post-edit.sh, post-test.sh, stop-verify.sh (portable)
+      lib/         context, output helpers
+  mcp/      MCP stdio server (8 read-only tools)
 ```
 
 ## Development
 
 ```bash
 bun install
-bun test packages/core/     # 136 tests
-bun tsc --build --noEmit    # type-check
+bun test                  # 275 tests across 15 files
+bunx tsc --noEmit         # type-check all packages
+bun run packages/cli/src/index.ts doctor  # check prerequisites
 ```
-
-Tests use `bun test` (not vitest) because the SQLite store uses `bun:sqlite`.
 
 ## Requirements
 
 - [Bun](https://bun.sh) >= 1.0
-- Node.js (for `scip-typescript` via npx)
-- TypeScript project with `tsconfig.json` (for SCIP indexing)
+- `scip-typescript` (for TypeScript SCIP indexing — optional, structural imports still work without it)
+- `scip-python` (for Python SCIP indexing — optional)
+
+## Supported languages
+
+- TypeScript / JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`) — full SCIP + structural import support
+- Python (`.py`) — full SCIP + structural import support
