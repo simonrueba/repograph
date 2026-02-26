@@ -52,8 +52,13 @@ export class ScipTypescriptIndexer implements Indexer {
 
     const duration = performance.now() - start;
 
+    // If no SCIP file was produced, record a clear error
+    if (!existsSync(cachedPath)) {
+      errors.push("no index.scip produced — scip-typescript may have failed or found no files to index");
+    }
+
     return {
-      scipFilePath: existsSync(cachedPath) ? cachedPath : rawOutputPath,
+      scipFilePath: existsSync(cachedPath) ? cachedPath : "",
       language: "typescript",
       filesIndexed: 0, // actual count determined after parsing the SCIP file
       errors,

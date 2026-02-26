@@ -340,6 +340,73 @@ describe("detectProjects", () => {
     });
   });
 
+  // ── Nested project detection (no workspaces, no root tsconfig) ────────
+
+  describe("nested project detection (subdirectory scan)", () => {
+    it("detects tsconfig.json in an immediate subdirectory", () => {
+      const root = makeTempDir();
+
+      // No workspaces, no root tsconfig
+      writeJson(join(root, "package.json"), { name: "my-app" });
+
+      // tsconfig in src/
+      mkdirp(join(root, "src"));
+      writeFileSync(join(root, "src", "tsconfig.json"), "{}", "utf-8");
+
+      const projects = detectProjects(root);
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0].projectId).toBe("src");
+      expect(projects[0].language).toBe("typescript");
+    });
+
+    it("detects pyproject.toml in an immediate subdirectory", () => {
+      const root = makeTempDir();
+
+      mkdirp(join(root, "backend"));
+      writeFileSync(join(root, "backend", "pyproject.toml"), "[build-system]\n", "utf-8");
+
+      const projects = detectProjects(root);
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0].projectId).toBe("backend");
+      expect(projects[0].language).toBe("python");
+    });
+
+    it("skips node_modules and hidden directories during subdirectory scan", () => {
+      const root = makeTempDir();
+
+      // Create a tsconfig inside node_modules (should be skipped)
+      mkdirp(join(root, "node_modules", "some-pkg"));
+      writeFileSync(join(root, "node_modules", "some-pkg", "tsconfig.json"), "{}", "utf-8");
+
+      // Create a tsconfig inside .hidden dir (should be skipped)
+      mkdirp(join(root, ".hidden"));
+      writeFileSync(join(root, ".hidden", "tsconfig.json"), "{}", "utf-8");
+
+      const projects = detectProjects(root);
+
+      expect(projects).toHaveLength(0);
+    });
+
+    it("prefers root tsconfig over subdirectory scan", () => {
+      const root = makeTempDir();
+
+      // Root has tsconfig
+      writeFileSync(join(root, "tsconfig.json"), "{}", "utf-8");
+
+      // Subdirectory also has tsconfig
+      mkdirp(join(root, "src"));
+      writeFileSync(join(root, "src", "tsconfig.json"), "{}", "utf-8");
+
+      const projects = detectProjects(root);
+
+      // Should detect root project, not subdirectory
+      expect(projects).toHaveLength(1);
+      expect(projects[0].projectId).toBe(".");
+    });
+  });
+
   // ── Malformed / edge cases ─────────────────────────────────────────────
 
   describe("edge cases", () => {
