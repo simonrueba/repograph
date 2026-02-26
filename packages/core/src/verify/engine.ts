@@ -137,6 +137,15 @@ export class VerifyEngine {
       );
     }
 
+    // Non-blocking warning: files indexed but no symbols (SCIP likely failed)
+    const symbolCount = this.store.searchSymbols("").length;
+    if (allFiles.length > 0 && symbolCount === 0) {
+      if (!report.recommendations) report.recommendations = [];
+      report.recommendations.push(
+        `Warning: ${allFiles.length} files indexed but 0 symbols — SCIP indexing likely failed or was skipped. Run 'repograph doctor' to check prerequisites.`,
+      );
+    }
+
     return report;
   }
 }

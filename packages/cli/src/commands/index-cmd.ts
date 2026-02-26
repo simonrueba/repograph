@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "fs";
+import { readdirSync, readFileSync, statSync, existsSync } from "fs";
 import { join, relative, extname } from "path";
 import {
   extractImports,
@@ -120,6 +120,37 @@ export async function runIndex(args: string[]): Promise<void> {
   const tsIndexer = new ScipTypescriptIndexer();
   const pyIndexer = new ScipPythonIndexer();
 
+  // Helper: run a SCIP indexer, parse, and ingest — with proper error surfacing
+  async function runScipIndexer(
+    indexer: { name: string; run: typeof tsIndexer.run },
+    projectId?: string,
+    targetDir?: string,
+  ): Promise<void> {
+    const result = indexer.run(ctx.repoRoot, targetDir ? { targetDir, projectId } : undefined);
+
+    // If SCIP produced no file, surface the errors instead of silently failing
+    if (!result.scipFilePath || !existsSync(result.scipFilePath)) {
+      indexerResults.push({
+        indexer: indexer.name,
+        result: { errors: result.errors, projectId, warning: "no SCIP index produced" },
+      });
+      return;
+    }
+
+    const parser = new ScipParser();
+    const index = await parser.parse(result.scipFilePath);
+    const ingested = parser.ingest(index, ctx.store, ctx.repoRoot, projectId);
+    indexerResults.push({
+      indexer: indexer.name,
+      result: { ...result, ...ingested, projectId },
+    });
+    if (projectId) {
+      ctx.store.setProjectIndexTs(projectId, Date.now());
+    }
+  }
+
+  const warnings: string[] = [];
+
   if (projects.length > 0) {
     // Multi-project path: iterate detected projects
     for (const project of projects) {
@@ -127,18 +158,7 @@ export async function runIndex(args: string[]): Promise<void> {
 
       if (project.language === "typescript" && tsIndexer.canIndex(targetDir)) {
         try {
-          const result = tsIndexer.run(ctx.repoRoot, {
-            targetDir,
-            projectId: project.projectId,
-          });
-          const parser = new ScipParser();
-          const index = await parser.parse(result.scipFilePath);
-          const ingested = parser.ingest(index, ctx.store, ctx.repoRoot, project.projectId);
-          indexerResults.push({
-            indexer: "scip-typescript",
-            result: { ...result, ...ingested, projectId: project.projectId },
-          });
-          ctx.store.setProjectIndexTs(project.projectId, Date.now());
+          await runScipIndexer(tsIndexer, project.projectId, targetDir);
         } catch (err: any) {
           indexerResults.push({
             indexer: "scip-typescript",
@@ -149,18 +169,7 @@ export async function runIndex(args: string[]): Promise<void> {
 
       if (project.language === "python" && pyIndexer.canIndex(targetDir)) {
         try {
-          const result = pyIndexer.run(ctx.repoRoot, {
-            targetDir,
-            projectId: project.projectId,
-          });
-          const parser = new ScipParser();
-          const index = await parser.parse(result.scipFilePath);
-          const ingested = parser.ingest(index, ctx.store, ctx.repoRoot, project.projectId);
-          indexerResults.push({
-            indexer: "scip-python",
-            result: { ...result, ...ingested, projectId: project.projectId },
-          });
-          ctx.store.setProjectIndexTs(project.projectId, Date.now());
+          await runScipIndexer(pyIndexer, project.projectId, targetDir);
         } catch (err: any) {
           indexerResults.push({
             indexer: "scip-python",
@@ -173,14 +182,7 @@ export async function runIndex(args: string[]): Promise<void> {
     // Fallback: single-project behavior at repo root
     if (tsIndexer.canIndex(ctx.repoRoot)) {
       try {
-        const result = tsIndexer.run(ctx.repoRoot);
-        const parser = new ScipParser();
-        const index = await parser.parse(result.scipFilePath);
-        const ingested = parser.ingest(index, ctx.store, ctx.repoRoot);
-        indexerResults.push({
-          indexer: "scip-typescript",
-          result: { ...result, ...ingested },
-        });
+        await runScipIndexer(tsIndexer);
       } catch (err: any) {
         indexerResults.push({
           indexer: "scip-typescript",
@@ -191,14 +193,7 @@ export async function runIndex(args: string[]): Promise<void> {
 
     if (pyIndexer.canIndex(ctx.repoRoot)) {
       try {
-        const result = pyIndexer.run(ctx.repoRoot);
-        const parser = new ScipParser();
-        const index = await parser.parse(result.scipFilePath);
-        const ingested = parser.ingest(index, ctx.store, ctx.repoRoot);
-        indexerResults.push({
-          indexer: "scip-python",
-          result: { ...result, ...ingested },
-        });
+        await runScipIndexer(pyIndexer);
       } catch (err: any) {
         indexerResults.push({
           indexer: "scip-python",
@@ -206,13 +201,33 @@ export async function runIndex(args: string[]): Promise<void> {
         });
       }
     }
+
+    if (!tsIndexer.canIndex(ctx.repoRoot) && !pyIndexer.canIndex(ctx.repoRoot)) {
+      warnings.push(
+        "no SCIP-compatible project detected (need tsconfig.json, pyproject.toml, or setup.py) " +
+        "— only structural imports indexed, symbol search will be empty",
+      );
+    }
   }
 
   // Record SCIP timestamp and clear dirty (full index covers everything)
-  if (indexerResults.some((r) => !("error" in (r.result as any)))) {
+  const anyScipSuccess = indexerResults.some((r) => {
+    const res = r.result as any;
+    return !res.error && !res.warning;
+  });
+  if (anyScipSuccess) {
     ctx.store.setMeta("last_full_scip_index_ts", String(Date.now()));
   }
   ctx.store.clearAllDirty();
+
+  // Check if symbols were actually ingested — warn if not
+  const symbolCount = ctx.store.searchSymbols("").length;
+  if (sourceFiles.length > 0 && symbolCount === 0 && !structuralOnly) {
+    warnings.push(
+      `indexed ${sourceFiles.length} files but 0 symbols — SCIP indexing likely failed. ` +
+      `Run 'repograph doctor' to check prerequisites.`,
+    );
+  }
 
   ctx.ledger.log("index", {
     fileCount: sourceFiles.length,
@@ -221,5 +236,12 @@ export async function runIndex(args: string[]): Promise<void> {
 
   ctx.db.close();
 
-  output("index", { fileCount: sourceFiles.length, indexers: indexerResults });
+  const result: Record<string, unknown> = {
+    fileCount: sourceFiles.length,
+    indexers: indexerResults,
+  };
+  if (warnings.length > 0) {
+    result.warnings = warnings;
+  }
+  output("index", result);
 }

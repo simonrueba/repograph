@@ -48,8 +48,13 @@ export class ScipPythonIndexer implements Indexer {
 
     const duration = performance.now() - start;
 
+    // If no SCIP file was produced, record a clear error
+    if (!existsSync(cachedPath)) {
+      errors.push("no index.scip produced — scip-python may have failed or found no files to index");
+    }
+
     return {
-      scipFilePath: cachedPath,
+      scipFilePath: existsSync(cachedPath) ? cachedPath : "",
       language: "python",
       filesIndexed: 0, // actual count determined after parsing the SCIP file
       errors,

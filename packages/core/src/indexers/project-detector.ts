@@ -168,5 +168,46 @@ export function detectProjects(repoRoot: string): DetectedProject[] {
   }
 
   // ── Step 3: no workspaces — treat the repo root as the single project ───
-  return projectsFromDir(absRoot, absRoot);
+  const rootProjects = projectsFromDir(absRoot, absRoot);
+  if (rootProjects.length > 0) {
+    return rootProjects;
+  }
+
+  // ── Step 4: scan immediate subdirectories for nested projects ───────────
+  // Catches repos where tsconfig.json / pyproject.toml lives in src/, app/, etc.
+  return scanSubdirectories(absRoot);
+}
+
+/**
+ * Scan immediate subdirectories (depth 1) for project config files.
+ * Skips common non-project directories (node_modules, dist, .git, etc.).
+ */
+function scanSubdirectories(absRoot: string): DetectedProject[] {
+  const skipDirs = new Set([
+    "node_modules", "dist", "build", "out", ".git", ".repograph",
+    ".next", ".nuxt", ".svelte-kit", "coverage", "__pycache__", ".venv", "venv",
+  ]);
+
+  let entries: string[];
+  try {
+    entries = readdirSync(absRoot);
+  } catch {
+    return [];
+  }
+
+  const results: DetectedProject[] = [];
+  for (const entry of entries) {
+    if (skipDirs.has(entry) || entry.startsWith(".")) continue;
+
+    const absDir = join(absRoot, entry);
+    try {
+      if (!statSync(absDir).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+
+    results.push(...projectsFromDir(absRoot, absDir));
+  }
+
+  return results;
 }
