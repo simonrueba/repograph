@@ -156,13 +156,13 @@ describe("ScipParser.ingest", () => {
           symbols: [
             {
               symbol: "npm . pkg . MyClass#",
-              kind: 2,
+              kind: 7, // SCIP Kind.Class
               displayName: "MyClass",
               documentation: ["A test class"],
             },
             {
               symbol: "npm . pkg . doStuff().",
-              kind: 5,
+              kind: 17, // SCIP Kind.Function
               displayName: "doStuff",
               documentation: ["Does stuff"],
             },
@@ -222,10 +222,12 @@ describe("ScipParser.ingest", () => {
     expect(myClass).not.toBeNull();
     expect(myClass!.name).toBe("MyClass");
     expect(myClass!.file_path).toBe("src/main.ts");
+    expect(myClass!.kind).toBe("class");
 
     const doStuff = store.getSymbol("npm . pkg . doStuff().");
     expect(doStuff).not.toBeNull();
     expect(doStuff!.name).toBe("doStuff");
+    expect(doStuff!.kind).toBe("function");
 
     // Check occurrences
     const mainOccs = store.getOccurrencesByFile("src/main.ts");
@@ -399,8 +401,19 @@ console.log(greet("world"), result);
       expect(result.symbolsIngested).toBeGreaterThanOrEqual(0);
       expect(result.occurrencesIngested).toBeGreaterThan(0);
 
-      // Verify we can find symbols
-      const symbols = store.searchSymbols("greet");
+      // Verify symbols have correct inferred kinds
+      const greetSymbols = store.searchSymbols("greet");
+      if (greetSymbols.length > 0) {
+        expect(greetSymbols[0].kind).toBe("function");
+      }
+      const calcSymbols = store.searchSymbols("Calculator");
+      if (calcSymbols.length > 0) {
+        expect(calcSymbols[0].kind).toBe("class");
+      }
+      const addSymbols = store.searchSymbols("add");
+      if (addSymbols.length > 0) {
+        expect(addSymbols[0].kind).toBe("method");
+      }
       // At minimum check we found occurrences for the file
       const fileOccs = store.getOccurrencesByFile("src/index.ts");
       expect(fileOccs.length).toBeGreaterThan(0);
