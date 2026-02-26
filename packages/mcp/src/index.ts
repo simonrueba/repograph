@@ -43,6 +43,10 @@ function err(message: string) {
   return { content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }], isError: true as const };
 }
 
+function toErrorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 // ── MCP Server ───────────────────────────────────────────────────────
 
 const server = new McpServer({
@@ -65,8 +69,8 @@ server.registerTool(
   async ({ query, k }) => {
     try {
       return ok(graph.searchSymbol(query, k ?? 10));
-    } catch (e: any) {
-      return err(e.message);
+    } catch (e: unknown) {
+      return err(toErrorMessage(e));
     }
   },
 );
@@ -85,8 +89,8 @@ server.registerTool(
   async ({ symbolId }) => {
     try {
       return ok(graph.getDef(symbolId));
-    } catch (e: any) {
-      return err(e.message);
+    } catch (e: unknown) {
+      return err(toErrorMessage(e));
     }
   },
 );
@@ -109,8 +113,8 @@ server.registerTool(
   async ({ symbolId, scope }) => {
     try {
       return ok(graph.findRefs(symbolId, { scope }));
-    } catch (e: any) {
-      return err(e.message);
+    } catch (e: unknown) {
+      return err(toErrorMessage(e));
     }
   },
 );
@@ -131,8 +135,8 @@ server.registerTool(
   async ({ paths }) => {
     try {
       return ok(impact.computeImpact(paths));
-    } catch (e: any) {
-      return err(e.message);
+    } catch (e: unknown) {
+      return err(toErrorMessage(e));
     }
   },
 );
@@ -173,8 +177,8 @@ server.registerTool(
         text = JSON.stringify(result);
       }
       return { content: [{ type: "text" as const, text }] };
-    } catch (e: any) {
-      return err(e.message);
+    } catch (e: unknown) {
+      return err(toErrorMessage(e));
     }
   },
 );
@@ -210,8 +214,8 @@ server.registerTool(
         text = JSON.stringify(result);
       }
       return { content: [{ type: "text" as const, text }] };
-    } catch (e: any) {
-      return err(e.message);
+    } catch (e: unknown) {
+      return err(toErrorMessage(e));
     }
   },
 );
@@ -229,14 +233,9 @@ server.registerTool(
   },
   async ({ path }) => {
     try {
-      const symbols = db
-        .query(
-          "SELECT id, kind, name, file_path, range_start, range_end, doc FROM symbols WHERE file_path = ?1",
-        )
-        .all(path);
-      return ok(symbols);
-    } catch (e: any) {
-      return err(e.message);
+      return ok(store.getSymbolsByFile(path));
+    } catch (e: unknown) {
+      return err(toErrorMessage(e));
     }
   },
 );
@@ -266,8 +265,8 @@ server.registerTool(
           0,
         ),
       });
-    } catch (e: any) {
-      return err(e.message);
+    } catch (e: unknown) {
+      return err(toErrorMessage(e));
     }
   },
 );

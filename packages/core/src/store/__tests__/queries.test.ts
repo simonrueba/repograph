@@ -226,6 +226,45 @@ describe("StoreQueries", () => {
     });
   });
 
+  // ── getSymbolsByFile ───────────────────────────────────────────────
+
+  describe("getSymbolsByFile", () => {
+    it("should return all symbols in a given file", () => {
+      queries.upsertSymbol({ id: "s1", name: "foo", kind: "function", file_path: "src/a.ts" });
+      queries.upsertSymbol({ id: "s2", name: "bar", kind: "class", file_path: "src/a.ts" });
+      queries.upsertSymbol({ id: "s3", name: "baz", kind: "variable", file_path: "src/b.ts" });
+
+      const result = queries.getSymbolsByFile("src/a.ts");
+      expect(result).toHaveLength(2);
+      expect(result.map((s) => s.name).sort()).toEqual(["bar", "foo"]);
+    });
+
+    it("should return empty array for a file with no symbols", () => {
+      expect(queries.getSymbolsByFile("nonexistent.ts")).toEqual([]);
+    });
+  });
+
+  // ── transaction ───────────────────────────────────────────────────
+
+  describe("transaction", () => {
+    it("should commit on success", () => {
+      queries.transaction(() => {
+        queries.upsertSymbol({ id: "t1", name: "txn", kind: "function" });
+      });
+      expect(queries.getSymbol("t1")).not.toBeNull();
+    });
+
+    it("should rollback on error", () => {
+      try {
+        queries.transaction(() => {
+          queries.upsertSymbol({ id: "t2", name: "rollback", kind: "function" });
+          throw new Error("fail");
+        });
+      } catch { /* expected */ }
+      expect(queries.getSymbol("t2")).toBeNull();
+    });
+  });
+
   // ── Edges ──────────────────────────────────────────────────────────
 
   describe("edges", () => {

@@ -72,6 +72,32 @@ const x = require("lodash");
       const result = extractImports(code, "typescript");
       expect(result).toEqual([]);
     });
+
+    it("should extract side-effect imports", () => {
+      const code = `import "./polyfill";\nimport "reflect-metadata";`;
+      const result = extractImports(code, "typescript");
+      expect(result).toEqual([
+        { specifier: "./polyfill", kind: "import" },
+        { specifier: "reflect-metadata", kind: "import" },
+      ]);
+    });
+
+    it("should extract dynamic imports", () => {
+      const code = `const mod = await import("./lazy-module");\nimport("./another");`;
+      const result = extractImports(code, "typescript");
+      expect(result).toEqual([
+        { specifier: "./lazy-module", kind: "import" },
+        { specifier: "./another", kind: "import" },
+      ]);
+    });
+
+    it("should not duplicate side-effect imports already caught by main regex", () => {
+      const code = `import { foo } from "./foo";\nimport "./bar";`;
+      const result = extractImports(code, "typescript");
+      expect(result).toHaveLength(2);
+      expect(result).toContainEqual({ specifier: "./foo", kind: "import" });
+      expect(result).toContainEqual({ specifier: "./bar", kind: "import" });
+    });
   });
 
   describe("Python", () => {
@@ -119,6 +145,19 @@ from collections import defaultdict
       const code = `x = 42\nprint(x)`;
       const result = extractImports(code, "python");
       expect(result).toEqual([]);
+    });
+
+    it("should extract relative imports (from . import X)", () => {
+      const code = `from . import utils\nfrom .. import base`;
+      const result = extractImports(code, "python");
+      expect(result).toContainEqual({ specifier: ".", kind: "import" });
+      expect(result).toContainEqual({ specifier: "..", kind: "import" });
+    });
+
+    it("should extract relative imports with module (from .utils import X)", () => {
+      const code = `from .utils import helper`;
+      const result = extractImports(code, "python");
+      expect(result).toContainEqual({ specifier: ".utils", kind: "import" });
     });
   });
 

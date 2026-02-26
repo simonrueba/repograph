@@ -46,6 +46,18 @@ export interface ProjectRecord {
 export class StoreQueries {
   constructor(private db: RepographDB) {}
 
+  /** Run a callback inside a BEGIN/COMMIT transaction. Rolls back on error. */
+  transaction(fn: () => void): void {
+    this.db.exec("BEGIN");
+    try {
+      fn();
+      this.db.exec("COMMIT");
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      throw e;
+    }
+  }
+
   // ── Files ────────────────────────────────────────────────────────
 
   upsertFile(file: Omit<FileRecord, "indexed_at">): void {
@@ -135,6 +147,14 @@ export class StoreQueries {
         "SELECT id, kind, name, file_path, range_start, range_end, doc FROM symbols WHERE name LIKE ?1",
       )
       .all(`%${query}%`) as SymbolRecord[];
+  }
+
+  getSymbolsByFile(filePath: string): SymbolRecord[] {
+    return this.db
+      .query(
+        "SELECT id, kind, name, file_path, range_start, range_end, doc FROM symbols WHERE file_path = ?1",
+      )
+      .all(filePath) as SymbolRecord[];
   }
 
   // ── Occurrences ──────────────────────────────────────────────────

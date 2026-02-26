@@ -1,34 +1,40 @@
 #!/bin/bash
 # Stop hook: full update + verify before allowing completion
 # Outputs {"decision":"block","reason":"..."} to prevent stop on failure.
-set -e
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_ROOT"
 
 # Read stdin (hook input JSON)
 INPUT=$(cat)
 
-GUARD_FILE=".repograph/.stop_guard"
-
-# Guard file protection — prevent recursive Stop loops
-if [ -f "$GUARD_FILE" ]; then
-  GUARD_TS=$(cat "$GUARD_FILE" | grep -o '"ts":[0-9]*' | grep -o '[0-9]*' || echo "0")
-  NOW=$(date +%s)
-  AGE=$((NOW - GUARD_TS))
-  if [ "$AGE" -lt 10 ]; then
-    exit 0
-  fi
-fi
-
-# Also check stop_hook_active from stdin as secondary guard
+# Check stop_hook_active from stdin — prevent infinite loops
 if echo "$INPUT" | grep -q '"stop_hook_active":true'; then
   exit 0
 fi
 
-# Create guard file
-cleanup() { rm -f "$GUARD_FILE"; }
+# Atomic lock via mkdir (fails if directory already exists = another hook is running)
+LOCK_DIR=".repograph/.stop_lock"
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  # Lock exists — check if it's stale (> 120s old)
+  if [ -f "$LOCK_DIR/pid" ]; then
+    LOCK_AGE=$(( $(date +%s) - $(stat -f %m "$LOCK_DIR/pid" 2>/dev/null || echo "0") ))
+    if [ "$LOCK_AGE" -gt 120 ]; then
+      rm -rf "$LOCK_DIR"
+      mkdir "$LOCK_DIR" 2>/dev/null || exit 0
+    else
+      exit 0
+    fi
+  else
+    exit 0
+  fi
+fi
+
+# Write PID for stale lock detection
+echo $$ > "$LOCK_DIR/pid"
+
+# Cleanup lock on exit
+cleanup() { rm -rf "$LOCK_DIR"; }
 trap cleanup EXIT
-echo "{\"pid\":$$,\"ts\":$(date +%s)}" > "$GUARD_FILE"
 
 # Run update — only full SCIP re-index if there are dirty files
 UPDATE_OUTPUT=$(bun run packages/cli/src/index.ts update 2>/dev/null) || true

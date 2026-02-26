@@ -9,10 +9,16 @@ export interface ImportEntry {
 const TS_IMPORT_RE =
   /(?:import|export)\s+(?:type\s+)?(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s+from\s+)?['"]([^'"]+)['"]/g;
 const TS_REQUIRE_RE = /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+// Side-effect imports: import "./polyfill" or import "reflect-metadata"
+const TS_SIDE_EFFECT_RE = /^import\s+['"]([^'"]+)['"]\s*;?\s*$/gm;
+// Dynamic imports: import("./module") or await import("./module")
+const TS_DYNAMIC_IMPORT_RE = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
 
 // Regex patterns for Python
 const PY_IMPORT_RE = /^import\s+([\w.]+)/gm;
 const PY_FROM_IMPORT_RE = /^from\s+([\w.]+)\s+import/gm;
+// Python relative imports: from . import X, from .. import Y
+const PY_REL_IMPORT_RE = /^from\s+(\.+\w*)\s+import/gm;
 
 export function extractImports(
   code: string,
@@ -21,20 +27,39 @@ export function extractImports(
   const imports: ImportEntry[] = [];
 
   if (language === "typescript" || language === "javascript") {
+    const seen = new Set<string>();
     for (const match of code.matchAll(TS_IMPORT_RE)) {
       const kind = match[0].trimStart().startsWith("export")
         ? "export"
         : "import";
       imports.push({ specifier: match[1], kind });
+      seen.add(match[1]);
     }
     for (const match of code.matchAll(TS_REQUIRE_RE)) {
       imports.push({ specifier: match[1], kind: "import" });
+      seen.add(match[1]);
+    }
+    // Side-effect imports (import "./polyfill") — skip if already caught by TS_IMPORT_RE
+    for (const match of code.matchAll(TS_SIDE_EFFECT_RE)) {
+      if (!seen.has(match[1])) {
+        imports.push({ specifier: match[1], kind: "import" });
+      }
+    }
+    // Dynamic imports (import("./module"))
+    for (const match of code.matchAll(TS_DYNAMIC_IMPORT_RE)) {
+      if (!seen.has(match[1])) {
+        imports.push({ specifier: match[1], kind: "import" });
+      }
     }
   } else if (language === "python") {
     for (const match of code.matchAll(PY_IMPORT_RE)) {
       imports.push({ specifier: match[1], kind: "import" });
     }
     for (const match of code.matchAll(PY_FROM_IMPORT_RE)) {
+      imports.push({ specifier: match[1], kind: "import" });
+    }
+    // Relative imports (from . import X, from .. import Y)
+    for (const match of code.matchAll(PY_REL_IMPORT_RE)) {
       imports.push({ specifier: match[1], kind: "import" });
     }
   }

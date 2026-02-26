@@ -106,7 +106,7 @@ export class ScipParser {
    * creating files, symbols, occurrences, and edges in the database.
    */
   ingest(
-    index: any,
+    index: unknown,
     store: StoreQueries,
     _repoRoot: string,
   ): {
@@ -114,11 +114,21 @@ export class ScipParser {
     symbolsIngested: number;
     occurrencesIngested: number;
   } {
+    const idx = index as { documents?: Array<{
+      relativePath: string;
+      language?: string;
+      symbols?: Array<{ symbol: string; kind?: number; displayName?: string; documentation?: string[] }>;
+      occurrences?: Array<{ symbol?: string; range: number[]; symbolRoles?: number }>;
+    }> };
+
     let filesIngested = 0;
     let symbolsIngested = 0;
     let occurrencesIngested = 0;
 
-    for (const doc of index.documents || []) {
+    // Wrap entire ingest in a transaction for atomicity and performance
+    store.transaction(() => {
+
+    for (const doc of idx.documents || []) {
       const filePath = doc.relativePath;
       const existingFile = store.getFile(filePath);
       store.upsertFile({
@@ -186,6 +196,8 @@ export class ScipParser {
         }
       }
     }
+
+    }); // end transaction
 
     return { filesIngested, symbolsIngested, occurrencesIngested };
   }
