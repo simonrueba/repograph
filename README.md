@@ -80,9 +80,9 @@ All commands output JSON. Symbol IDs are SCIP symbol strings returned by `search
 
 | Command | Description |
 |---------|-------------|
-| `setup [path]` | One-command setup: init + index + generate hooks & MCP config |
+| `setup [path] [--quick]` | One-command setup: init + index + generate hooks & MCP config. `--quick` skips SCIP. |
 | `init [path]` | Create `.repograph/` directory and SQLite database |
-| `index [path]` | Full index: structural imports + SCIP analysis |
+| `index [path] [--structural-only]` | Full index: structural imports + SCIP analysis. `--structural-only` skips SCIP. |
 | `update [--full]` | Incremental update (structural only, or `--full` for SCIP re-index) |
 | `query search <query>` | Fuzzy search symbols by name |
 | `query def <symbol-id>` | Get definition location, docs, and code snippet |
@@ -147,7 +147,7 @@ All hooks guard against missing `.repograph/` — they silently exit if the proj
 `repograph verify` runs these checks:
 
 1. **Empty index** — fails if zero files are indexed (prevents vacuous pass on uninitialized projects)
-2. **Index freshness** — every source file on disk is hashed and compared to the stored hash. Fails if any file changed since last full SCIP index.
+2. **Index freshness** — checks the dirty set (files marked changed by hooks or `update`). Fails if any dirty files exist that haven't been covered by a full SCIP index pass.
 3. **Missing test runs** — checks the ledger for a `test_run` event after the most recent `edit`. Fails if no tests were run after editing.
 4. **Typecheck** — runs `tsc --noEmit` against the repo's `tsconfig.json`. Fails on any type errors. On failure, includes recommendations with `repograph query impact` commands for the top error files. Skipped if no `tsconfig.json` exists.
 
@@ -213,3 +213,7 @@ bun run packages/cli/src/index.ts doctor  # check prerequisites
 
 - TypeScript / JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`) — full SCIP + structural import support
 - Python (`.py`) — full SCIP + structural import support
+
+## License
+
+MIT

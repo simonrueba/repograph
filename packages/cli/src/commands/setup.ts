@@ -9,7 +9,7 @@ import { runIndex } from "./index-cmd";
  *
  * Usage:
  *   repograph setup [path]           # init + structural + SCIP index
- *   repograph setup [path] --quick   # init + structural only (no SCIP)
+ *   repograph setup [path] --quick   # init + structural imports only (skip SCIP)
  */
 export async function runSetup(args: string[]): Promise<void> {
   const quick = args.includes("--quick");
@@ -84,9 +84,16 @@ export async function runSetup(args: string[]): Promise<void> {
     steps.push({ step: "mcp_config", status: "exists" });
   }
 
-  // Step 6: Run full index
-  await runIndex([repoRoot]);
-  steps.push({ step: "index", status: quick ? "structural" : "full" });
+  // Step 6: Run index
+  if (quick) {
+    // Quick mode: structural imports only, skip SCIP indexers
+    await runIndex([repoRoot, "--structural-only"]);
+    steps.push({ step: "index", status: "structural" });
+  } else {
+    // Full mode: structural + SCIP
+    await runIndex([repoRoot]);
+    steps.push({ step: "index", status: "full" });
+  }
 
   output("setup", { repoRoot, steps });
 }
@@ -133,11 +140,28 @@ function generateHooksConfig(): object {
 }
 
 function generateMcpConfig(): object {
+  // Resolve the MCP server source relative to this CLI package.
+  // Avoids `bunx repograph-mcp` which risks executing an unrelated npm package.
+  const localMcp = join(import.meta.dir, "..", "..", "..", "mcp", "src", "index.ts");
+
+  if (existsSync(localMcp)) {
+    return {
+      mcpServers: {
+        repograph: {
+          command: "bun",
+          args: ["run", resolve(localMcp)],
+          env: { REPOGRAPH_ROOT: "." },
+        },
+      },
+    };
+  }
+
+  // Fallback: assume repograph is on PATH (e.g. after `bun link`)
   return {
     mcpServers: {
       repograph: {
-        command: "bunx",
-        args: ["repograph-mcp"],
+        command: "bun",
+        args: ["run", "repograph-mcp"],
         env: { REPOGRAPH_ROOT: "." },
       },
     },

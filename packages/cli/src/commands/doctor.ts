@@ -62,24 +62,26 @@ function checkNodeVersion(): DoctorCheck {
 }
 
 function checkScipTypescript(): DoctorCheck {
-  const raw = runCommand("bunx scip-typescript --version");
+  // Indexer runs: npx --yes @sourcegraph/scip-typescript index
+  const raw = runCommand("npx --yes @sourcegraph/scip-typescript --version");
   if (!raw) {
     return {
       name: "scip_typescript",
       status: "warn",
-      detail: "scip-typescript not available via bunx — TypeScript indexing will be skipped",
+      detail: "@sourcegraph/scip-typescript not available via npx — TypeScript SCIP indexing will be skipped",
     };
   }
   return { name: "scip_typescript", status: "ok", detail: raw };
 }
 
 function checkScipPython(): DoctorCheck {
-  const raw = runCommand("scip-python --version");
+  // Indexer runs: uvx scip-python index
+  const raw = runCommand("uvx scip-python --version") ?? runCommand("scip-python --version");
   if (!raw) {
     return {
       name: "scip_python",
       status: "warn",
-      detail: "scip-python not found on PATH — Python indexing will be skipped",
+      detail: "scip-python not available via uvx or PATH — Python SCIP indexing will be skipped",
     };
   }
   return { name: "scip_python", status: "ok", detail: raw };
