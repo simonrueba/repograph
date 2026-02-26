@@ -39,8 +39,8 @@ fi
 
 VERIFY_OUTPUT=$(bun run packages/cli/src/index.ts verify 2>&1) || true
 
-# Parse the envelope — check "ok":true or "ok":false
-if echo "$VERIFY_OUTPUT" | grep -q '"ok":true'; then
+# Parse the verify report status — "status":"OK" means all checks passed
+if echo "$VERIFY_OUTPUT" | grep -q '"status":"OK"'; then
   exit 0
 fi
 
