@@ -86,6 +86,24 @@ export class VerifyEngine {
   ) {}
 
   verify(): VerifyReport {
+    // Guard: detect empty index to prevent vacuous pass
+    const allFiles = this.store.getAllFiles();
+    if (allFiles.length === 0) {
+      return {
+        status: "FAIL",
+        timestamp: Date.now(),
+        checks: {
+          indexFreshness: {
+            passed: false,
+            issues: [{ type: "INDEX_EMPTY", path: "", reason: "no files indexed — run 'repograph index' or 'repograph setup'" }],
+          },
+          testCoverage: { passed: true, issues: [] },
+          typecheck: { passed: true, issues: [] },
+        },
+        summary: "failed checks: indexFreshness",
+      };
+    }
+
     const indexFreshness = checkIndexFreshness(this.store, this.repoRoot);
     const testCoverage = checkMissingTests(this.ledger);
     const typecheck = checkTypecheck(this.repoRoot);

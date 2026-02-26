@@ -11,6 +11,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { join } from "node:path";
 
+import { existsSync, mkdirSync } from "node:fs";
+
 import {
   createDatabase,
   StoreQueries,
@@ -23,7 +25,15 @@ import {
 // ── Bootstrap core services ──────────────────────────────────────────
 
 const repoRoot = process.env.REPOGRAPH_ROOT || process.cwd();
-const dbPath = join(repoRoot, ".repograph", "index.db");
+const repographDir = join(repoRoot, ".repograph");
+const dbPath = join(repographDir, "index.db");
+
+// Ensure .repograph/ exists — create if missing so the MCP server
+// can start even before `repograph init` has been run.
+if (!existsSync(repographDir)) {
+  mkdirSync(repographDir, { recursive: true });
+  console.error("RepoGraph: created .repograph/ directory. Run 'repograph setup' for a full index.");
+}
 
 const db = createDatabase(dbPath);
 const store = new StoreQueries(db);
