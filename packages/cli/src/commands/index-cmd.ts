@@ -68,9 +68,11 @@ export async function runIndex(args: string[]): Promise<void> {
   const sourceFiles = walkSourceFiles(ctx.repoRoot, ctx.repoRoot);
 
   // Register all files and extract structural imports
+  const fileHashes = new Map<string, string>();
   for (const file of sourceFiles) {
     const content = readFileSync(file.fullPath);
     const hash = hashContent(content);
+    fileHashes.set(file.path, hash);
     const language = languageFromExt(file.ext);
 
     ctx.store.upsertFile({ path: file.path, language, hash });
@@ -139,7 +141,11 @@ export async function runIndex(args: string[]): Promise<void> {
 
     const parser = new ScipParser();
     const index = await parser.parse(result.scipFilePath);
-    const ingested = parser.ingest(index, ctx.store, ctx.repoRoot, projectId);
+    // Reuse pre-built file hash map for skip-unchanged; index is always a full run → bulk mode
+    const ingested = parser.ingest(index, ctx.store, ctx.repoRoot, projectId, {
+      fileHashes,
+      bulk: true,
+    });
     indexerResults.push({
       indexer: indexer.name,
       result: { ...result, ...ingested, projectId },

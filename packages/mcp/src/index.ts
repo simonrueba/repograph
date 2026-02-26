@@ -262,13 +262,10 @@ server.registerTool(
   async () => {
     try {
       const files = store.getAllFiles();
-      const row = db
-        .query("SELECT COUNT(*) as count FROM symbols")
-        .get() as { count: number };
 
       return ok({
         totalFiles: files.length,
-        totalSymbols: row.count,
+        totalSymbols: store.getSymbolCount(),
         dirtyCount: store.getDirtyCount(),
         lastIndexed: files.reduce(
           (max, f) => Math.max(max, f.indexed_at ?? 0),

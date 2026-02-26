@@ -159,14 +159,22 @@ export class ScipParser {
    *
    * This processes all documents, symbols, and occurrences from the index,
    * creating files, symbols, occurrences, and edges in the database.
+   *
+   * @param options.fileHashes - Map of repo-relative path → content hash.
+   *   When provided, documents whose hash matches the stored hash are skipped
+   *   (saves re-processing unchanged files during incremental runs).
+   * @param options.bulk - When true, uses `bulkTransaction()` which drops indexes
+   *   and sets `synchronous = OFF` for the duration. Use for full reindexes.
    */
   ingest(
     index: unknown,
     store: StoreQueries,
     _repoRoot: string,
     projectRoot?: string,
+    options?: { fileHashes?: Map<string, string>; bulk?: boolean },
   ): {
     filesIngested: number;
+    filesSkipped: number;
     symbolsIngested: number;
     occurrencesIngested: number;
   } {
@@ -178,6 +186,7 @@ export class ScipParser {
     }> };
 
     let filesIngested = 0;
+    let filesSkipped = 0;
     let symbolsIngested = 0;
     let occurrencesIngested = 0;
 
@@ -187,16 +196,27 @@ export class ScipParser {
     // In-memory symbol cache — avoids per-occurrence SELECTs
     const symbolCache = new Map<string, SymbolRecord>();
 
-    // Wrap entire ingest in a transaction for atomicity and performance
-    store.transaction(() => {
+    const fileHashes = options?.fileHashes;
+
+    const doIngest = () => {
 
     for (const doc of idx.documents || []) {
       const filePath = pathPrefix + doc.relativePath;
       const existingFile = store.getFile(filePath);
+
+      // Skip unchanged files when caller provides content hashes
+      if (fileHashes && existingFile) {
+        const currentHash = fileHashes.get(filePath);
+        if (currentHash && currentHash === existingFile.hash) {
+          filesSkipped++;
+          continue;
+        }
+      }
+
       store.upsertFile({
         path: filePath,
         language: doc.language || "unknown",
-        hash: existingFile?.hash || "",
+        hash: fileHashes?.get(filePath) ?? existingFile?.hash ?? "",
       });
       store.clearOccurrencesForFile(filePath);
       filesIngested++;
@@ -277,8 +297,14 @@ export class ScipParser {
       occurrencesIngested += pendingOccurrences.length;
     }
 
-    }); // end transaction
+    }; // end doIngest
 
-    return { filesIngested, symbolsIngested, occurrencesIngested };
+    if (options?.bulk) {
+      store.bulkTransaction(doIngest);
+    } else {
+      store.transaction(doIngest);
+    }
+
+    return { filesIngested, filesSkipped, symbolsIngested, occurrencesIngested };
   }
 }

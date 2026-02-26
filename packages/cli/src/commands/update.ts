@@ -167,7 +167,12 @@ export async function runUpdate(args: string[]): Promise<void> {
 
       const parser = new ScipParser();
       const index = await parser.parse(result.scipFilePath);
-      const ingested = parser.ingest(index, ctx.store, ctx.repoRoot, projectId);
+      // Build file hash map for skip-unchanged; use bulk mode for full reindexes
+      const fileHashes = new Map(sourceFiles.map((f) => [f.path, f.hash]));
+      const ingested = parser.ingest(index, ctx.store, ctx.repoRoot, projectId, {
+        fileHashes,
+        bulk: true,
+      });
       indexerResults.push({
         indexer: indexer.name,
         result: { ...result, ...ingested, projectId },
