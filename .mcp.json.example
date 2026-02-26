@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "repograph": {
+      "command": "bun",
+      "args": ["run", "packages/mcp/src/index.ts"],
+      "env": {
+        "REPOGRAPH_ROOT": "."
+      }
+    }
+  }
+}

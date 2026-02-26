@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "types": ["bun-types"]
+  },
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/cli" },
+    { "path": "packages/mcp" }
+  ],
+  "include": []
+}
