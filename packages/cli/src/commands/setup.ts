@@ -141,27 +141,20 @@ function generateHooksConfig(): object {
 
 function generateMcpConfig(): object {
   // Resolve the MCP server source relative to this CLI package.
-  // Avoids `bunx repograph-mcp` which risks executing an unrelated npm package.
   const localMcp = join(import.meta.dir, "..", "..", "..", "mcp", "src", "index.ts");
 
-  if (existsSync(localMcp)) {
-    return {
-      mcpServers: {
-        repograph: {
-          command: "bun",
-          args: ["run", resolve(localMcp)],
-          env: { REPOGRAPH_ROOT: "." },
-        },
-      },
-    };
+  if (!existsSync(localMcp)) {
+    throw new Error(
+      `Cannot find MCP server at ${localMcp}. ` +
+      `Ensure you are running setup from a repograph clone.`,
+    );
   }
 
-  // Fallback: assume repograph is on PATH (e.g. after `bun link`)
   return {
     mcpServers: {
       repograph: {
         command: "bun",
-        args: ["run", "repograph-mcp"],
+        args: ["run", resolve(localMcp)],
         env: { REPOGRAPH_ROOT: "." },
       },
     },
