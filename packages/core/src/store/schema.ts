@@ -55,4 +55,11 @@ CREATE TABLE IF NOT EXISTS dirty (
   path       TEXT PRIMARY KEY,
   changed_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS projects (
+  project_id    TEXT PRIMARY KEY,
+  root          TEXT NOT NULL,
+  language      TEXT NOT NULL,
+  last_index_ts INTEGER NOT NULL DEFAULT 0
+);
 `;

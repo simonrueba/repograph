@@ -10,6 +10,7 @@ export type {
   SymbolRecord,
   OccurrenceRecord,
   EdgeRecord,
+  ProjectRecord,
 } from "./store/queries";
 
 // ── Ledger ───────────────────────────────────────────────────────────────
@@ -39,3 +40,5 @@ export type { ImportEntry } from "./indexers/import-extractor";
 export { ScipTypescriptIndexer } from "./indexers/scip-typescript";
 export { ScipPythonIndexer } from "./indexers/scip-python";
 export type { Indexer, IndexResult } from "./indexers/types";
+export { detectProjects } from "./indexers/project-detector";
+export type { DetectedProject } from "./indexers/project-detector";

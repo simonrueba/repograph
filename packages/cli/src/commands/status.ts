@@ -28,7 +28,15 @@ export async function runStatus(args: string[]): Promise<void> {
     lastFullScipIndexTs: ctx.store.getMeta("last_full_scip_index_ts"),
   };
 
+  const allProjects = ctx.store.getAllProjects();
+  const projects = allProjects.map((p) => ({
+    id: p.project_id,
+    root: p.root,
+    language: p.language,
+    lastIndexed: p.last_index_ts,
+  }));
+
   ctx.db.close();
 
-  output("status", { totalFiles, totalSymbols, totalEdges, meta });
+  output("status", { totalFiles, totalSymbols, totalEdges, meta, projects });
 }

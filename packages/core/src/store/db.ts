@@ -12,7 +12,7 @@ export function createDatabase(path: string): RepographDB {
   // Seed schema version if not set
   const existing = db.query("SELECT value FROM meta WHERE key = 'schema_version'").get();
   if (!existing) {
-    db.exec("INSERT INTO meta (key, value) VALUES ('schema_version', '2')");
+    db.exec("INSERT INTO meta (key, value) VALUES ('schema_version', '3')");
   }
 
   return db;

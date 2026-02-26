@@ -9,5 +9,8 @@ export interface IndexResult {
 export interface Indexer {
   name: string;
   canIndex(repoRoot: string): boolean;
-  run(repoRoot: string, opts?: { targetDir?: string }): IndexResult;
+  run(
+    repoRoot: string,
+    opts?: { targetDir?: string; projectId?: string },
+  ): IndexResult;
 }

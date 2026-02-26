@@ -20,7 +20,7 @@ describe("createDatabase", () => {
     tempDirs.length = 0;
   });
 
-  it("should create all 7 tables", () => {
+  it("should create all 8 tables", () => {
     const dbPath = makeTempDb();
     const db = createDatabase(dbPath);
 
@@ -32,7 +32,7 @@ describe("createDatabase", () => {
 
     const tableNames = tables.map((t) => t.name).sort();
     expect(tableNames).toEqual(
-      ["dirty", "edges", "files", "ledger", "meta", "occurrences", "symbols"].sort(),
+      ["dirty", "edges", "files", "ledger", "meta", "occurrences", "projects", "symbols"].sort(),
     );
 
     db.close();

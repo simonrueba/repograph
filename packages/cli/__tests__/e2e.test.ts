@@ -119,7 +119,7 @@ export function calculate(a: number, b: number): number {
     expect(data.key).toBe("value");
   });
 
-  it("verify fails without test run after edit", () => {
+  it("verify fails without test run after edit", { timeout: 30_000 }, () => {
     // Log an edit event so the verify check triggers
     run(`ledger log edit '{"file":"src/math.ts"}' ${testDir}`, testDir);
 

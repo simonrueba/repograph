@@ -310,4 +310,214 @@ describe("StoreQueries", () => {
       expect(queries.getOccurrencesByFile("a.ts")).toHaveLength(0);
     });
   });
+
+  // ── Projects ───────────────────────────────────────────────────────
+
+  describe("Projects", () => {
+    it("should upsert and get a project (round-trip)", () => {
+      queries.upsertProject({
+        project_id: "packages/core",
+        root: "/repo/packages/core",
+        language: "typescript",
+        last_index_ts: 1000,
+      });
+
+      const project = queries.getProject("packages/core");
+
+      expect(project).not.toBeNull();
+      expect(project!.project_id).toBe("packages/core");
+      expect(project!.root).toBe("/repo/packages/core");
+      expect(project!.language).toBe("typescript");
+      expect(project!.last_index_ts).toBe(1000);
+    });
+
+    it("should return null for a missing project", () => {
+      const project = queries.getProject("nonexistent");
+      expect(project).toBeNull();
+    });
+
+    it("should update existing project fields on re-upsert", () => {
+      queries.upsertProject({
+        project_id: "packages/core",
+        root: "/repo/packages/core",
+        language: "typescript",
+        last_index_ts: 1000,
+      });
+
+      // Re-upsert with updated values
+      queries.upsertProject({
+        project_id: "packages/core",
+        root: "/repo/packages/core-renamed",
+        language: "python",
+        last_index_ts: 9999,
+      });
+
+      const project = queries.getProject("packages/core");
+      expect(project!.root).toBe("/repo/packages/core-renamed");
+      expect(project!.language).toBe("python");
+      expect(project!.last_index_ts).toBe(9999);
+    });
+
+    it("should return all registered projects via getAllProjects", () => {
+      queries.upsertProject({
+        project_id: "packages/app",
+        root: "/repo/packages/app",
+        language: "typescript",
+        last_index_ts: 0,
+      });
+      queries.upsertProject({
+        project_id: "packages/lib",
+        root: "/repo/packages/lib",
+        language: "typescript",
+        last_index_ts: 0,
+      });
+      queries.upsertProject({
+        project_id: "services/ml",
+        root: "/repo/services/ml",
+        language: "python",
+        last_index_ts: 0,
+      });
+
+      const projects = queries.getAllProjects();
+
+      expect(projects).toHaveLength(3);
+
+      const ids = projects.map((p) => p.project_id).sort();
+      expect(ids).toEqual(["packages/app", "packages/lib", "services/ml"]);
+    });
+
+    it("should return an empty array when no projects are registered", () => {
+      expect(queries.getAllProjects()).toHaveLength(0);
+    });
+
+    it("should update last_index_ts via setProjectIndexTs", () => {
+      queries.upsertProject({
+        project_id: "packages/core",
+        root: "/repo/packages/core",
+        language: "typescript",
+        last_index_ts: 0,
+      });
+
+      queries.setProjectIndexTs("packages/core", 42000);
+
+      const project = queries.getProject("packages/core");
+      expect(project!.last_index_ts).toBe(42000);
+    });
+
+    it("should leave other project fields unchanged after setProjectIndexTs", () => {
+      queries.upsertProject({
+        project_id: "packages/core",
+        root: "/repo/packages/core",
+        language: "typescript",
+        last_index_ts: 0,
+      });
+
+      queries.setProjectIndexTs("packages/core", 99999);
+
+      const project = queries.getProject("packages/core");
+      expect(project!.root).toBe("/repo/packages/core");
+      expect(project!.language).toBe("typescript");
+    });
+
+    it("setProjectIndexTs is a no-op for a project_id that does not exist", () => {
+      // Should not throw; no rows updated
+      expect(() =>
+        queries.setProjectIndexTs("nonexistent", 12345),
+      ).not.toThrow();
+    });
+
+    // ── getProjectForPath ─────────────────────────────────────────────
+
+    it("should return the matching project for a file directly under its root", () => {
+      queries.upsertProject({
+        project_id: "packages/core",
+        root: "/repo/packages/core",
+        language: "typescript",
+        last_index_ts: 0,
+      });
+
+      const project = queries.getProjectForPath(
+        "/repo/packages/core/src/index.ts",
+      );
+
+      expect(project).not.toBeNull();
+      expect(project!.project_id).toBe("packages/core");
+    });
+
+    it("should return the most specific (deepest) matching project", () => {
+      // Shallow project covers the whole packages/ tree
+      queries.upsertProject({
+        project_id: ".",
+        root: "/repo",
+        language: "typescript",
+        last_index_ts: 0,
+      });
+      // Deeper project that is a more specific match
+      queries.upsertProject({
+        project_id: "packages/core",
+        root: "/repo/packages/core",
+        language: "typescript",
+        last_index_ts: 0,
+      });
+
+      const project = queries.getProjectForPath(
+        "/repo/packages/core/src/index.ts",
+      );
+
+      expect(project!.project_id).toBe("packages/core");
+    });
+
+    it("should return the root project when the file does not belong to any deeper project", () => {
+      queries.upsertProject({
+        project_id: ".",
+        root: "/repo",
+        language: "typescript",
+        last_index_ts: 0,
+      });
+      queries.upsertProject({
+        project_id: "packages/core",
+        root: "/repo/packages/core",
+        language: "typescript",
+        last_index_ts: 0,
+      });
+
+      // File is under /repo but NOT under /repo/packages/core
+      const project = queries.getProjectForPath("/repo/src/main.ts");
+
+      expect(project!.project_id).toBe(".");
+    });
+
+    it("should return null when no project matches the given path", () => {
+      queries.upsertProject({
+        project_id: "packages/core",
+        root: "/repo/packages/core",
+        language: "typescript",
+        last_index_ts: 0,
+      });
+
+      // File lives outside the registered project tree
+      const project = queries.getProjectForPath("/other/completely/different/path.ts");
+
+      expect(project).toBeNull();
+    });
+
+    it("should return null when no projects are registered", () => {
+      const project = queries.getProjectForPath("/repo/src/index.ts");
+      expect(project).toBeNull();
+    });
+
+    it("should handle a file path that exactly equals the project root", () => {
+      queries.upsertProject({
+        project_id: "packages/core",
+        root: "/repo/packages/core",
+        language: "typescript",
+        last_index_ts: 0,
+      });
+
+      const project = queries.getProjectForPath("/repo/packages/core");
+
+      expect(project).not.toBeNull();
+      expect(project!.project_id).toBe("packages/core");
+    });
+  });
 });

@@ -6,6 +6,7 @@ import {
   ScipTypescriptIndexer,
   ScipPythonIndexer,
   ScipParser,
+  detectProjects,
 } from "repograph-core";
 import { getContext } from "../lib/context";
 import { output } from "../lib/output";
@@ -60,6 +61,19 @@ function walkSourceFiles(
     }
   }
   return results;
+}
+
+/**
+ * Determine whether a file path belongs to a project root.
+ * Both `filePath` and `projectRoot` are relative to `repoRoot`.
+ */
+function fileInProject(filePath: string, projectRoot: string): boolean {
+  if (projectRoot === "." || projectRoot === "") {
+    // Root-level project encompasses everything
+    return true;
+  }
+  const normalized = projectRoot.endsWith("/") ? projectRoot : projectRoot + "/";
+  return filePath.startsWith(normalized);
 }
 
 export async function runUpdate(args: string[]): Promise<void> {
@@ -129,43 +143,121 @@ export async function runUpdate(args: string[]): Promise<void> {
 
   // Run SCIP indexers if --full
   const indexerResults: { indexer: string; result: unknown }[] = [];
+
   if (useFull) {
+    const projects = detectProjects(ctx.repoRoot);
     const tsIndexer = new ScipTypescriptIndexer();
     const pyIndexer = new ScipPythonIndexer();
 
-    if (tsIndexer.canIndex(ctx.repoRoot)) {
-      try {
-        const result = tsIndexer.run(ctx.repoRoot);
-        const parser = new ScipParser();
-        const index = await parser.parse(result.scipFilePath);
-        const ingested = parser.ingest(index, ctx.store, ctx.repoRoot);
-        indexerResults.push({
-          indexer: "scip-typescript",
-          result: { ...result, ...ingested },
-        });
-      } catch (err: any) {
-        indexerResults.push({
-          indexer: "scip-typescript",
-          result: { error: err.message },
-        });
-      }
-    }
+    // Collect all currently dirty file paths for selective reindexing
+    const allDirtyPaths = ctx.store.getDirtyPaths().map((d) => d.path);
+    const allChangedPaths = new Set([
+      ...dirtyFiles.map((f) => f.path),
+      ...newFiles.map((f) => f.path),
+      ...allDirtyPaths,
+    ]);
 
-    if (pyIndexer.canIndex(ctx.repoRoot)) {
-      try {
-        const result = pyIndexer.run(ctx.repoRoot);
-        const parser = new ScipParser();
-        const index = await parser.parse(result.scipFilePath);
-        const ingested = parser.ingest(index, ctx.store, ctx.repoRoot);
-        indexerResults.push({
-          indexer: "scip-python",
-          result: { ...result, ...ingested },
+    if (projects.length > 0) {
+      // Multi-project path: only reindex projects that have dirty files
+      for (const project of projects) {
+        // Register project in store (upsert is idempotent)
+        ctx.store.upsertProject({
+          project_id: project.projectId,
+          root: project.projectId, // store relative path for DB consistency
+          language: project.language,
+          last_index_ts: ctx.store.getProject(project.projectId)?.last_index_ts ?? 0,
         });
-      } catch (err: any) {
-        indexerResults.push({
-          indexer: "scip-python",
-          result: { error: err.message },
-        });
+
+        const projectHasDirtyFiles = [...allChangedPaths].some((filePath) =>
+          fileInProject(filePath, project.projectId),
+        );
+
+        if (!projectHasDirtyFiles) {
+          continue;
+        }
+
+        const targetDir = project.root; // already absolute from detectProjects
+
+        if (project.language === "typescript" && tsIndexer.canIndex(targetDir)) {
+          try {
+            const result = tsIndexer.run(ctx.repoRoot, {
+              targetDir,
+              projectId: project.projectId,
+            });
+            const parser = new ScipParser();
+            const index = await parser.parse(result.scipFilePath);
+            const ingested = parser.ingest(index, ctx.store, ctx.repoRoot);
+            indexerResults.push({
+              indexer: "scip-typescript",
+              result: { ...result, ...ingested, projectId: project.projectId },
+            });
+            ctx.store.setProjectIndexTs(project.projectId, Date.now());
+          } catch (err: any) {
+            indexerResults.push({
+              indexer: "scip-typescript",
+              result: { error: err.message, projectId: project.projectId },
+            });
+          }
+        }
+
+        if (project.language === "python" && pyIndexer.canIndex(targetDir)) {
+          try {
+            const result = pyIndexer.run(ctx.repoRoot, {
+              targetDir,
+              projectId: project.projectId,
+            });
+            const parser = new ScipParser();
+            const index = await parser.parse(result.scipFilePath);
+            const ingested = parser.ingest(index, ctx.store, ctx.repoRoot);
+            indexerResults.push({
+              indexer: "scip-python",
+              result: { ...result, ...ingested, projectId: project.projectId },
+            });
+            ctx.store.setProjectIndexTs(project.projectId, Date.now());
+          } catch (err: any) {
+            indexerResults.push({
+              indexer: "scip-python",
+              result: { error: err.message, projectId: project.projectId },
+            });
+          }
+        }
+      }
+    } else {
+      // Fallback: single-project behavior at repo root
+      if (tsIndexer.canIndex(ctx.repoRoot)) {
+        try {
+          const result = tsIndexer.run(ctx.repoRoot);
+          const parser = new ScipParser();
+          const index = await parser.parse(result.scipFilePath);
+          const ingested = parser.ingest(index, ctx.store, ctx.repoRoot);
+          indexerResults.push({
+            indexer: "scip-typescript",
+            result: { ...result, ...ingested },
+          });
+        } catch (err: any) {
+          indexerResults.push({
+            indexer: "scip-typescript",
+            result: { error: err.message },
+          });
+        }
+      }
+
+      if (pyIndexer.canIndex(ctx.repoRoot)) {
+        try {
+          const result = pyIndexer.run(ctx.repoRoot);
+          const parser = new ScipParser();
+          const index = await parser.parse(result.scipFilePath);
+          const ingested = parser.ingest(index, ctx.store, ctx.repoRoot);
+          indexerResults.push({
+            indexer: "scip-python",
+            result: { ...result, ...ingested },
+          });
+        } catch (err: any) {
+          indexerResults.push({
+            indexer: "scip-python",
+            result: { error: err.message },
+          });
+        }
       }
     }
   }

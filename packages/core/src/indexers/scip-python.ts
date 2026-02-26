@@ -14,10 +14,14 @@ export class ScipPythonIndexer implements Indexer {
     );
   }
 
-  run(repoRoot: string, opts?: { targetDir?: string }): IndexResult {
+  run(
+    repoRoot: string,
+    opts?: { targetDir?: string; projectId?: string },
+  ): IndexResult {
     const cwd = opts?.targetDir ?? repoRoot;
+    const projectId = opts?.projectId ?? "root";
     const projectName = basename(cwd);
-    const cacheDir = join(repoRoot, ".repograph", "cache", "scip");
+    const cacheDir = join(repoRoot, ".repograph", "cache", "scip", projectId);
     mkdirSync(cacheDir, { recursive: true });
     const cachedPath = join(cacheDir, "index-python.scip");
     const errors: string[] = [];

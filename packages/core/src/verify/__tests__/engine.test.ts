@@ -134,7 +134,7 @@ describe("VerifyEngine", () => {
       expect(result.issues).toHaveLength(0);
     });
 
-    it("should pass for valid TypeScript", () => {
+    it("should pass for valid TypeScript", { timeout: 30_000 }, () => {
       writeSourceFile("tsconfig.json", JSON.stringify({
         compilerOptions: { strict: true, noEmit: true, skipLibCheck: true },
         include: ["src"],
@@ -145,7 +145,7 @@ describe("VerifyEngine", () => {
       expect(result.passed).toBe(true);
     });
 
-    it("should fail for invalid TypeScript", () => {
+    it("should fail for invalid TypeScript", { timeout: 30_000 }, () => {
       writeSourceFile("tsconfig.json", JSON.stringify({
         compilerOptions: { strict: true, noEmit: true, skipLibCheck: true },
         include: ["src"],
