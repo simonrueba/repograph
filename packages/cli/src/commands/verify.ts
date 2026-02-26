@@ -1,6 +1,6 @@
 import { writeFileSync } from "fs";
 import { join } from "path";
-import { VerifyEngine } from "repograph-core";
+import { VerifyEngine, redactReport } from "repograph-core";
 import { getContext } from "../lib/context";
 import { output } from "../lib/output";
 
@@ -10,9 +10,10 @@ export async function runVerify(args: string[]): Promise<void> {
   const engine = new VerifyEngine(ctx.store, ctx.ledger, ctx.repoRoot);
   const report = engine.verify();
 
-  // Always write verify_last.json (atomic write via temp file)
+  // Always write verify_last.json — redact secrets before persisting to disk
+  // to prevent accidental prompt leakage if an LLM ingests the report.
   const reportPath = join(ctx.repographDir, "verify_last.json");
-  writeFileSync(reportPath, JSON.stringify(report, null, 2));
+  writeFileSync(reportPath, JSON.stringify(redactReport(report), null, 2));
 
   ctx.db.close();
 

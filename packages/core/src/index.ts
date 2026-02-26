@@ -33,6 +33,7 @@ export type { ModuleGraphResult, GraphMode } from "./graph/modules";
 // ── Verify ───────────────────────────────────────────────────────────────
 export { VerifyEngine } from "./verify/engine";
 export type { VerifyReport } from "./verify/engine";
+export { redactReport, redactString } from "./verify/redact";
 
 // ── Indexers ─────────────────────────────────────────────────────────────
 export { extractImports, resolveModulePath } from "./indexers/import-extractor";
