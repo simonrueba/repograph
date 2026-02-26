@@ -209,6 +209,7 @@ describe("ScipParser.ingest", () => {
     const result = parser.ingest(mockIndex, store, "/repo");
 
     expect(result.filesIngested).toBe(2);
+    expect(result.filesSkipped).toBe(0);
     expect(result.symbolsIngested).toBe(2);
     // 4 non-local occurrences (3 from main.ts + 1 from utils.ts)
     expect(result.occurrencesIngested).toBe(4);
@@ -253,6 +254,7 @@ describe("ScipParser.ingest", () => {
     const result = parser.ingest({ documents: [] }, store, "/repo");
 
     expect(result.filesIngested).toBe(0);
+    expect(result.filesSkipped).toBe(0);
     expect(result.symbolsIngested).toBe(0);
     expect(result.occurrencesIngested).toBe(0);
   });
@@ -262,8 +264,73 @@ describe("ScipParser.ingest", () => {
     const result = parser.ingest({}, store, "/repo");
 
     expect(result.filesIngested).toBe(0);
+    expect(result.filesSkipped).toBe(0);
     expect(result.symbolsIngested).toBe(0);
     expect(result.occurrencesIngested).toBe(0);
+  });
+
+  it("should skip unchanged files when fileHashes match", () => {
+    const parser = new ScipParser();
+
+    const mockIndex = {
+      documents: [
+        {
+          relativePath: "src/changed.ts",
+          language: "typescript",
+          symbols: [{ symbol: "sym.changed.", kind: 17, displayName: "changed" }],
+          occurrences: [
+            { symbol: "sym.changed.", range: [1, 0, 7], symbolRoles: 1 },
+          ],
+        },
+        {
+          relativePath: "src/unchanged.ts",
+          language: "typescript",
+          symbols: [{ symbol: "sym.unchanged.", kind: 17, displayName: "unchanged" }],
+          occurrences: [
+            { symbol: "sym.unchanged.", range: [1, 0, 9], symbolRoles: 1 },
+          ],
+        },
+      ],
+    };
+
+    // First ingest — both files are new
+    const r1 = parser.ingest(mockIndex, store, "/repo");
+    expect(r1.filesIngested).toBe(2);
+    expect(r1.filesSkipped).toBe(0);
+
+    // Update hashes to simulate file content
+    store.upsertFile({ path: "src/changed.ts", language: "typescript", hash: "hash-old" });
+    store.upsertFile({ path: "src/unchanged.ts", language: "typescript", hash: "hash-same" });
+
+    // Second ingest with fileHashes — unchanged.ts hash matches, changed.ts doesn't
+    const fileHashes = new Map([
+      ["src/changed.ts", "hash-new"],
+      ["src/unchanged.ts", "hash-same"],
+    ]);
+    const r2 = parser.ingest(mockIndex, store, "/repo", undefined, { fileHashes });
+    expect(r2.filesIngested).toBe(1);
+    expect(r2.filesSkipped).toBe(1);
+  });
+
+  it("should use bulkTransaction when bulk option is true", () => {
+    const parser = new ScipParser();
+    const mockIndex = {
+      documents: [
+        {
+          relativePath: "src/bulk.ts",
+          language: "typescript",
+          symbols: [{ symbol: "sym.bulk.", kind: 17, displayName: "bulk" }],
+          occurrences: [
+            { symbol: "sym.bulk.", range: [1, 0, 4], symbolRoles: 1 },
+          ],
+        },
+      ],
+    };
+
+    const result = parser.ingest(mockIndex, store, "/repo", undefined, { bulk: true });
+    expect(result.filesIngested).toBe(1);
+    // Verify data was written (indexes were recreated after bulk)
+    expect(store.getSymbol("sym.bulk.")).not.toBeNull();
   });
 
   it("should extract symbol name from SCIP symbol string", () => {

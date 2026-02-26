@@ -349,6 +349,57 @@ banner("7. File lookup — getAllFiles() full scan vs getFile() scoped (10 files
   console.log(`  Speedup: ${(ms1 / ms2).toFixed(1)}x  (crossover ~150 files; wins at scale)`);
 }
 
+// ── Bench 8: transaction() vs bulkTransaction() ─────────────────────
+
+banner("8. Full ingest — transaction() vs bulkTransaction()");
+
+{
+  function seedEdgesAndSymbols(s: StoreQueries): void {
+    const edges: EdgeRecord[] = [];
+    const syms: SymbolRecord[] = [];
+    for (let f = 0; f < NUM_FILES; f++) {
+      for (let r = 0; r < REFS_PER_FILE; r++) {
+        const targetFile = (f + 1 + (r % (NUM_FILES - 1))) % NUM_FILES;
+        const targetSym = r % SYMBOLS_PER_FILE;
+        edges.push({
+          source: `src/file_${f}.ts`,
+          target: `sym_${targetFile}_${targetSym}`,
+          kind: "references",
+          confidence: "high",
+        });
+      }
+      for (let ss = 0; ss < SYMBOLS_PER_FILE; ss++) {
+        syms.push({
+          id: `sym_${f}_${ss}`,
+          kind: "function",
+          name: `func_${f}_${ss}`,
+          file_path: `src/file_${f}.ts`,
+        });
+      }
+    }
+    s.insertEdges(edges);
+    s.upsertSymbols(syms);
+  }
+
+  // transaction()
+  store.clearAllEdges();
+  store.clearAllSymbols();
+  const t1 = process.hrtime();
+  store.transaction(() => seedEdgesAndSymbols(store));
+  const ms1 = hrMs(t1);
+
+  // bulkTransaction()
+  store.clearAllEdges();
+  store.clearAllSymbols();
+  const t2 = process.hrtime();
+  store.bulkTransaction(() => seedEdgesAndSymbols(store));
+  const ms2 = hrMs(t2);
+
+  console.log(`  transaction()     (${TOTAL_EDGES} edges + ${TOTAL_SYMBOLS} syms): ${fmt(ms1)}`);
+  console.log(`  bulkTransaction() (${TOTAL_EDGES} edges + ${TOTAL_SYMBOLS} syms): ${fmt(ms2)}`);
+  console.log(`  Speedup: ${(ms1 / ms2).toFixed(1)}x`);
+}
+
 // ── Cleanup ──────────────────────────────────────────────────────────
 
 db.close();

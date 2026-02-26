@@ -65,3 +65,30 @@ CREATE TABLE IF NOT EXISTS projects (
   last_index_ts INTEGER NOT NULL DEFAULT 0
 );
 `;
+
+/**
+ * Indexes on tables that are bulk-written during SCIP ingest.
+ * These can be dropped before a full ingest and recreated after to avoid
+ * per-row index maintenance overhead.
+ */
+export const INGEST_INDEXES_SQL = [
+  "CREATE INDEX IF NOT EXISTS idx_occurrences_symbol ON occurrences(symbol_id)",
+  "CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source)",
+  "CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target)",
+  "CREATE INDEX IF NOT EXISTS idx_edges_kind ON edges(kind)",
+  "CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name)",
+  "CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path)",
+  "CREATE INDEX IF NOT EXISTS idx_edges_source_kind ON edges(source, kind)",
+  "CREATE INDEX IF NOT EXISTS idx_edges_target_kind ON edges(target, kind)",
+];
+
+export const DROP_INGEST_INDEXES_SQL = [
+  "DROP INDEX IF EXISTS idx_occurrences_symbol",
+  "DROP INDEX IF EXISTS idx_edges_source",
+  "DROP INDEX IF EXISTS idx_edges_target",
+  "DROP INDEX IF EXISTS idx_edges_kind",
+  "DROP INDEX IF EXISTS idx_symbols_name",
+  "DROP INDEX IF EXISTS idx_symbols_file",
+  "DROP INDEX IF EXISTS idx_edges_source_kind",
+  "DROP INDEX IF EXISTS idx_edges_target_kind",
+];

@@ -1,4 +1,5 @@
 import type { RepographDB } from "./db";
+import { INGEST_INDEXES_SQL, DROP_INGEST_INDEXES_SQL } from "./schema";
 
 // ── Record types ─────────────────────────────────────────────────────
 
@@ -55,6 +56,25 @@ export class StoreQueries {
     } catch (e) {
       this.db.exec("ROLLBACK");
       throw e;
+    }
+  }
+
+  /**
+   * Run a bulk-ingest transaction with optimized pragmas and deferred indexes.
+   *
+   * - Sets `synchronous = OFF` for the duration (safe: a failed ingest can be re-run)
+   * - Drops ingest-related indexes before the work, recreates them after
+   * - Wraps the callback in a BEGIN/COMMIT transaction
+   * - Restores `synchronous = NORMAL` on exit (even on error)
+   */
+  bulkTransaction(fn: () => void): void {
+    this.db.exec("PRAGMA synchronous = OFF");
+    for (const sql of DROP_INGEST_INDEXES_SQL) this.db.exec(sql);
+    try {
+      this.transaction(fn);
+    } finally {
+      for (const sql of INGEST_INDEXES_SQL) this.db.exec(sql);
+      this.db.exec("PRAGMA synchronous = NORMAL");
     }
   }
 
