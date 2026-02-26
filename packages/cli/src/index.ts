@@ -44,11 +44,16 @@ async function main() {
       await runDirty(args.slice(1));
       break;
     }
+    case "doctor": {
+      const { runDoctor } = await import("./commands/doctor");
+      runDoctor(args.slice(1));
+      break;
+    }
     default: {
       const { outputError } = await import("./lib/output");
       outputError(
         "UNKNOWN_COMMAND",
-        `Unknown command: ${command}. Usage: repograph <init|index|update|query|verify|ledger|status|dirty>`,
+        `Unknown command: ${command}. Usage: repograph <init|index|update|query|verify|ledger|status|dirty|doctor>`,
       );
     }
   }

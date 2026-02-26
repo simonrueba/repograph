@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "command": "bash packages/cli/src/hooks/post-edit.sh"
+      },
+      {
+        "matcher": "Bash",
+        "command": "bash packages/cli/src/hooks/post-test.sh"
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "command": "bash packages/cli/src/hooks/stop-verify.sh"
+      }
+    ]
+  }
+}
