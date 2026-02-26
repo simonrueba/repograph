@@ -8,6 +8,7 @@ import {
   ScipParser,
 } from "repograph-core";
 import { getContext } from "../lib/context";
+import { output } from "../lib/output";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".py"]);
 const SKIP_DIRS = new Set(["node_modules", "dist", ".repograph", ".git"]);
@@ -87,6 +88,9 @@ export async function runIndex(args: string[]): Promise<void> {
     }
   }
 
+  // Record structural index timestamp
+  ctx.store.setMeta("last_structural_index_ts", String(Date.now()));
+
   // Run SCIP indexers if applicable
   const indexerResults: { indexer: string; result: unknown }[] = [];
   const tsIndexer = new ScipTypescriptIndexer();
@@ -128,6 +132,12 @@ export async function runIndex(args: string[]): Promise<void> {
     }
   }
 
+  // Record SCIP timestamp and clear dirty (full index covers everything)
+  if (indexerResults.some((r) => !("error" in (r.result as any)))) {
+    ctx.store.setMeta("last_full_scip_index_ts", String(Date.now()));
+  }
+  ctx.store.clearAllDirty();
+
   ctx.ledger.log("index", {
     fileCount: sourceFiles.length,
     indexers: indexerResults.map((r) => r.indexer),
@@ -135,10 +145,5 @@ export async function runIndex(args: string[]): Promise<void> {
 
   ctx.db.close();
 
-  console.log(
-    JSON.stringify({
-      fileCount: sourceFiles.length,
-      indexers: indexerResults,
-    }),
-  );
+  output("index", { fileCount: sourceFiles.length, indexers: indexerResults });
 }

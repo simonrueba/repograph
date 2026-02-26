@@ -2,7 +2,7 @@ import type { StoreQueries } from "../store/queries";
 import type { Ledger } from "../ledger/ledger";
 import { checkIndexFreshness } from "./checks/index-freshness";
 import { checkMissingTests } from "./checks/missing-tests";
-import { checkTypecheck } from "./checks/typecheck";
+import { checkTypecheck, type TypecheckIssue } from "./checks/typecheck";
 
 export interface VerifyReport {
   status: "OK" | "FAIL";
@@ -13,6 +13,69 @@ export interface VerifyReport {
     typecheck: { passed: boolean; issues: unknown[] };
   };
   summary: string;
+  /**
+   * High-level repograph query recommendations, populated when typecheck
+   * fails. Lists the top files by error count and useful follow-up commands.
+   */
+  recommendations?: string[];
+}
+
+/**
+ * Build the `recommendations` array for a failed typecheck result.
+ *
+ * Strategy:
+ *  1. List the top-5 files with the most errors, sorted descending.
+ *  2. For each of those files, emit an `impact` command.
+ *  3. Collect all unique `suggestedQueries` from individual issues and
+ *     de-duplicate them (capped to avoid noise).
+ *  4. Append a general guidance note.
+ */
+function buildTypecheckRecommendations(issues: TypecheckIssue[]): string[] {
+  const recommendations: string[] = [];
+
+  // ── 1. Count errors per file ──────────────────────────────────────────
+  const errorsByFile = new Map<string, number>();
+  for (const issue of issues) {
+    if (issue.file) {
+      errorsByFile.set(issue.file, (errorsByFile.get(issue.file) ?? 0) + 1);
+    }
+  }
+
+  // Sort files by error count descending, take top 5.
+  const topFiles = [...errorsByFile.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([file]) => file);
+
+  // ── 2. Impact commands for the top files ────────────────────────────
+  for (const file of topFiles) {
+    const count = errorsByFile.get(file)!;
+    recommendations.push(
+      `repograph query impact ${file}  # ${count} error${count === 1 ? "" : "s"}`,
+    );
+  }
+
+  // ── 3. Unique per-issue suggestions (de-duplicated, capped at 10) ────
+  const seen = new Set<string>(recommendations);
+  for (const issue of issues) {
+    for (const q of issue.suggestedQueries ?? []) {
+      if (!seen.has(q)) {
+        seen.add(q);
+        recommendations.push(q);
+        if (recommendations.length >= 15) break;
+      }
+    }
+    if (recommendations.length >= 15) break;
+  }
+
+  // ── 4. General guidance note ─────────────────────────────────────────
+  if (topFiles.length > 0) {
+    recommendations.push(
+      `Run \`repograph query impact <file>\` to see the blast radius of any file above`,
+    );
+  }
+
+  return recommendations;
 }
 
 export class VerifyEngine {
@@ -39,7 +102,7 @@ export class VerifyEngine {
       ? "all checks passed"
       : `failed checks: ${failedNames.join(", ")}`;
 
-    return {
+    const report: VerifyReport = {
       status: allPassed ? "OK" : "FAIL",
       timestamp: Date.now(),
       checks: {
@@ -49,5 +112,13 @@ export class VerifyEngine {
       },
       summary,
     };
+
+    if (!typecheck.passed && typecheck.issues.length > 0) {
+      report.recommendations = buildTypecheckRecommendations(
+        typecheck.issues as TypecheckIssue[],
+      );
+    }
+
+    return report;
   }
 }

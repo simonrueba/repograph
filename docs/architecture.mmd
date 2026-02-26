@@ -1,0 +1,122 @@
+%%{ init: { "theme": "base", "themeVariables": { "primaryColor": "#1a1a2e", "primaryTextColor": "#e0e0e0", "lineColor": "#6c63ff", "secondaryColor": "#16213e", "tertiaryColor": "#0f3460" } } }%%
+
+graph TB
+  subgraph CLI["packages/cli"]
+    direction TB
+    cli_index["index.ts<br/><i>CLI router</i>"]
+    cli_context["lib/context.ts<br/><i>DB + store bootstrap</i>"]
+    cli_output["lib/output.ts<br/><i>JSON envelope</i>"]
+
+    subgraph Commands
+      cmd_init["init"]
+      cmd_index["index"]
+      cmd_update["update"]
+      cmd_query["query"]
+      cmd_verify["verify"]
+      cmd_ledger["ledger"]
+      cmd_status["status"]
+      cmd_dirty["dirty"]
+    end
+
+    subgraph Hooks
+      hook_post_edit["post-edit.sh<br/><i>PostToolUse: Edit/Write</i>"]
+      hook_post_test["post-test.sh<br/><i>PostToolUse: Bash(test)</i>"]
+      hook_stop["stop-verify.sh<br/><i>Stop gate</i>"]
+    end
+
+    cli_index --> cmd_init & cmd_index & cmd_update & cmd_query & cmd_verify & cmd_ledger & cmd_status & cmd_dirty
+    cmd_init & cmd_index & cmd_update & cmd_query & cmd_verify & cmd_ledger & cmd_status & cmd_dirty --> cli_context
+    cmd_init & cmd_index & cmd_update & cmd_query & cmd_verify & cmd_ledger & cmd_status & cmd_dirty --> cli_output
+  end
+
+  subgraph MCP["packages/mcp"]
+    mcp_server["MCP Server<br/><i>7 tools via stdio</i>"]
+  end
+
+  subgraph Core["packages/core"]
+    direction TB
+
+    subgraph Store["Store Layer"]
+      schema["schema.ts<br/><i>DDL: files, symbols,<br/>occurrences, edges,<br/>meta, dirty</i>"]
+      db["db.ts<br/><i>bun:sqlite + WAL</i>"]
+      queries["queries.ts<br/><i>StoreQueries<br/>(44 refs across repo)</i>"]
+      db --> schema
+      queries --> db
+    end
+
+    subgraph Graph["Graph Layer"]
+      refs["refs.ts<br/><i>GraphQueries:<br/>search, def, refs</i>"]
+      impact["impact.ts<br/><i>ImpactAnalyzer:<br/>blast radius</i>"]
+      modules["modules.ts<br/><i>ModuleGraph:<br/>imports/semantic/hybrid<br/>+ DOT/Mermaid export</i>"]
+      refs --> queries
+      impact --> queries
+      modules --> queries
+    end
+
+    subgraph Verify["Verify Layer"]
+      engine["engine.ts<br/><i>VerifyEngine +<br/>recommendations</i>"]
+      check_fresh["index-freshness.ts<br/><i>dirty-set check</i>"]
+      check_tests["missing-tests.ts<br/><i>ledger-based</i>"]
+      check_tsc["typecheck.ts<br/><i>tsc --noEmit +<br/>structured errors</i>"]
+      engine --> check_fresh & check_tests & check_tsc
+      check_fresh --> queries
+      check_tests --> ledger
+    end
+
+    subgraph Indexers["Indexer Layer"]
+      extractor["import-extractor.ts<br/><i>structural imports</i>"]
+      scip_ts["scip-typescript.ts"]
+      scip_py["scip-python.ts"]
+      parser["parser.ts<br/><i>ScipParser: protobuf<br/>→ symbols + occurrences</i>"]
+      scip_ts & scip_py --> types_idx["types.ts"]
+      parser --> queries
+    end
+
+    subgraph Ledger["Ledger"]
+      ledger["ledger.ts<br/><i>append-only event log</i>"]
+      ledger --> db
+    end
+
+    core_index["index.ts<br/><i>public API barrel</i>"]
+    core_index --> queries & db & schema & ledger & parser & refs & impact & modules & engine & extractor & scip_ts & scip_py
+  end
+
+  subgraph Data[".repograph/"]
+    direction LR
+    index_db[("index.db<br/><i>SQLite</i>")]
+    verify_json["verify_last.json"]
+    cache_scip["cache/scip/<br/>index.scip"]
+    guard_file[".stop_guard"]
+  end
+
+  %% Cross-package edges
+  cli_context -->|"createDatabase<br/>StoreQueries<br/>Ledger"| core_index
+  cmd_index & cmd_update -->|"extractImports<br/>ScipParser<br/>SCIP indexers"| core_index
+  cmd_query -->|"GraphQueries<br/>ImpactAnalyzer<br/>ModuleGraph"| core_index
+  cmd_verify -->|"VerifyEngine"| core_index
+  mcp_server -->|"all query classes"| core_index
+
+  %% Hook flows
+  hook_post_edit -.->|"dirty mark + update"| cli_index
+  hook_post_test -.->|"ledger log test"| cli_index
+  hook_stop -.->|"update + verify"| cli_index
+
+  %% Data flows
+  cmd_init -->|creates| index_db
+  cmd_verify -->|writes| verify_json
+  scip_ts & scip_py -->|caches| cache_scip
+  hook_stop -->|"lock/unlock"| guard_file
+  queries -->|reads/writes| index_db
+
+  %% Styling
+  classDef store fill:#0f3460,stroke:#6c63ff,color:#e0e0e0
+  classDef graph fill:#1a1a2e,stroke:#e94560,color:#e0e0e0
+  classDef verify fill:#16213e,stroke:#ffc107,color:#e0e0e0
+  classDef indexer fill:#1a1a2e,stroke:#4caf50,color:#e0e0e0
+  classDef data fill:#533483,stroke:#e94560,color:#e0e0e0
+
+  class schema,db,queries store
+  class refs,impact,modules graph
+  class engine,check_fresh,check_tests,check_tsc verify
+  class extractor,scip_ts,scip_py,parser,types_idx indexer
+  class index_db,verify_json,cache_scip,guard_file data

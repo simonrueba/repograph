@@ -1,4 +1,5 @@
 import { getContext } from "../lib/context";
+import { output } from "../lib/output";
 
 export async function runStatus(args: string[]): Promise<void> {
   const ctx = getContext(args[0]);
@@ -21,13 +22,13 @@ export async function runStatus(args: string[]): Promise<void> {
       .get() as { count: number }
   ).count;
 
+  const meta = {
+    schemaVersion: ctx.store.getMeta("schema_version"),
+    lastStructuralIndexTs: ctx.store.getMeta("last_structural_index_ts"),
+    lastFullScipIndexTs: ctx.store.getMeta("last_full_scip_index_ts"),
+  };
+
   ctx.db.close();
 
-  console.log(
-    JSON.stringify({
-      totalFiles,
-      totalSymbols,
-      totalEdges,
-    }),
-  );
+  output("status", { totalFiles, totalSymbols, totalEdges, meta });
 }

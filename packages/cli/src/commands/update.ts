@@ -8,6 +8,7 @@ import {
   ScipParser,
 } from "repograph-core";
 import { getContext } from "../lib/context";
+import { output } from "../lib/output";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".py"]);
 const SKIP_DIRS = new Set(["node_modules", "dist", ".repograph", ".git"]);
@@ -76,6 +77,11 @@ export async function runUpdate(args: string[]): Promise<void> {
   const staleSet = new Set(staleFiles);
   const dirtyFiles = sourceFiles.filter((f) => staleSet.has(f.path));
 
+  // Mark stale + new files dirty (tracks need for SCIP reindex)
+  for (const file of dirtyFiles) {
+    ctx.store.markDirty(file.path);
+  }
+
   // Update structural imports for dirty files
   for (const file of dirtyFiles) {
     const language = languageFromExt(file.ext);
@@ -102,6 +108,7 @@ export async function runUpdate(args: string[]): Promise<void> {
   for (const file of newFiles) {
     const language = languageFromExt(file.ext);
     ctx.store.upsertFile({ path: file.path, language, hash: file.hash });
+    ctx.store.markDirty(file.path);
 
     const code = readFileSync(file.fullPath, "utf-8");
     const imports = extractImports(code, language);
@@ -116,6 +123,9 @@ export async function runUpdate(args: string[]): Promise<void> {
       });
     }
   }
+
+  // Record structural index timestamp
+  ctx.store.setMeta("last_structural_index_ts", String(Date.now()));
 
   // Run SCIP indexers if --full
   const indexerResults: { indexer: string; result: unknown }[] = [];
@@ -160,6 +170,11 @@ export async function runUpdate(args: string[]): Promise<void> {
     }
   }
 
+  // Record full SCIP index timestamp if --full succeeded
+  if (useFull && indexerResults.some((r) => !("error" in (r.result as any)))) {
+    ctx.store.setMeta("last_full_scip_index_ts", String(Date.now()));
+  }
+
   ctx.ledger.log("update", {
     staleCount: dirtyFiles.length,
     newCount: newFiles.length,
@@ -169,12 +184,10 @@ export async function runUpdate(args: string[]): Promise<void> {
 
   ctx.db.close();
 
-  console.log(
-    JSON.stringify({
-      staleFiles: dirtyFiles.length,
-      newFiles: newFiles.length,
-      updated: dirtyFiles.length + newFiles.length,
-      indexers: indexerResults,
-    }),
-  );
+  output("update", {
+    staleFiles: dirtyFiles.length,
+    newFiles: newFiles.length,
+    updated: dirtyFiles.length + newFiles.length,
+    indexers: indexerResults,
+  });
 }

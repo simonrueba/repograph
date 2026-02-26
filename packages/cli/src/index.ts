@@ -39,16 +39,28 @@ async function main() {
       await runStatus(args.slice(1));
       break;
     }
-    default:
-      console.error(`Unknown command: ${command}`);
-      console.error(
-        "Usage: repograph <init|index|update|query|verify|ledger|status>",
+    case "dirty": {
+      const { runDirty } = await import("./commands/dirty");
+      await runDirty(args.slice(1));
+      break;
+    }
+    default: {
+      const { outputError } = await import("./lib/output");
+      outputError(
+        "UNKNOWN_COMMAND",
+        `Unknown command: ${command}. Usage: repograph <init|index|update|query|verify|ledger|status|dirty>`,
       );
-      process.exit(1);
+    }
   }
 }
 
 main().catch((e) => {
-  console.error(JSON.stringify({ error: e.message }));
+  console.log(
+    JSON.stringify({
+      ok: false,
+      kind: "error",
+      error: { code: "INTERNAL_ERROR", message: e.message },
+    }),
+  );
   process.exit(1);
 });

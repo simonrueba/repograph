@@ -66,9 +66,12 @@ export function calculate(a: number, b: number): number {
 
   it("init creates .repograph/ with expected files", () => {
     const output = run(`init ${testDir}`, testDir);
-    const result = JSON.parse(output);
+    const envelope = JSON.parse(output);
 
-    expect(result.status).toBe("initialized");
+    expect(envelope.ok).toBe(true);
+    expect(envelope.kind).toBe("init");
+    expect(envelope.data.repographDir).toBeDefined();
+    expect(envelope.data.dbPath).toBeDefined();
     expect(existsSync(join(testDir, ".repograph"))).toBe(true);
     expect(existsSync(join(testDir, ".repograph", "index.db"))).toBe(true);
     expect(existsSync(join(testDir, ".repograph", "state.json"))).toBe(true);
@@ -78,28 +81,36 @@ export function calculate(a: number, b: number): number {
 
   it("update registers files and detects stale files", () => {
     const output = run(`update ${testDir}`, testDir);
-    const result = JSON.parse(output);
+    const envelope = JSON.parse(output);
 
+    expect(envelope.ok).toBe(true);
+    expect(envelope.kind).toBe("update");
     // First update should register all files as new
-    expect(result.newFiles + result.staleFiles).toBeGreaterThanOrEqual(2);
-    expect(result.updated).toBeGreaterThanOrEqual(2);
+    expect(envelope.data.newFiles + envelope.data.staleFiles).toBeGreaterThanOrEqual(2);
+    expect(envelope.data.updated).toBeGreaterThanOrEqual(2);
   });
 
   it("status shows registered files and edges", () => {
     const output = run(`status ${testDir}`, testDir);
-    const result = JSON.parse(output);
+    const envelope = JSON.parse(output);
 
-    expect(result.totalFiles).toBeGreaterThanOrEqual(2);
-    expect(result.totalEdges).toBeGreaterThanOrEqual(1);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.kind).toBe("status");
+    expect(envelope.data.totalFiles).toBeGreaterThanOrEqual(2);
+    expect(envelope.data.totalEdges).toBeGreaterThanOrEqual(1);
+    expect(envelope.data.meta).toBeDefined();
   });
 
   it("ledger log records an event", () => {
     run(`ledger log test_event '{"key":"value"}' ${testDir}`, testDir);
 
     const listOutput = run(`ledger list ${testDir}`, testDir);
-    const listResult = JSON.parse(listOutput);
+    const listEnvelope = JSON.parse(listOutput);
 
-    const testEntries = listResult.entries.filter(
+    expect(listEnvelope.ok).toBe(true);
+    expect(listEnvelope.kind).toBe("ledger.list");
+
+    const testEntries = listEnvelope.data.entries.filter(
       (e: any) => e.event === "test_event",
     );
     expect(testEntries.length).toBeGreaterThanOrEqual(1);
@@ -115,28 +126,28 @@ export function calculate(a: number, b: number): number {
     // verify should fail because no test_run after the edit
     try {
       run(`verify ${testDir}`, testDir);
-      // If it didn't throw, it means status was OK -- that could happen
-      // if the verify engine considers the state acceptable
+      // If it didn't throw, status was OK — acceptable depending on verify engine state
     } catch (err: any) {
-      // verify exits with code 1 on FAIL, execSync throws
-      const stderr = err.stderr?.toString() || "";
-      expect(stderr).toContain("REPOGRAPH_VERIFY: FAIL");
-
+      // verify exits with code 1 on FAIL; execSync throws on non-zero exit
       const stdout = err.stdout?.toString().trim() || "";
       if (stdout) {
-        const report = JSON.parse(stdout);
-        expect(report.status).toBe("FAIL");
+        const envelope = JSON.parse(stdout);
+        expect(envelope.ok).toBe(true);
+        expect(envelope.kind).toBe("verify");
+        expect(envelope.data.status).toBe("FAIL");
       }
     }
   });
 
   it("query module-graph returns nodes and edges", () => {
     const output = run(`query module-graph --root ${testDir}`, testDir);
-    const result = JSON.parse(output);
+    const envelope = JSON.parse(output);
 
-    expect(result.result).toBeDefined();
-    expect(Array.isArray(result.result.nodes)).toBe(true);
-    expect(Array.isArray(result.result.edges)).toBe(true);
-    expect(result.result.nodes.length).toBeGreaterThanOrEqual(2);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.kind).toBe("query.module-graph");
+    expect(envelope.data.result).toBeDefined();
+    expect(Array.isArray(envelope.data.result.nodes)).toBe(true);
+    expect(Array.isArray(envelope.data.result.edges)).toBe(true);
+    expect(envelope.data.result.nodes.length).toBeGreaterThanOrEqual(2);
   });
 });

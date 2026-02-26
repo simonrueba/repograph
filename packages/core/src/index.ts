@@ -27,7 +27,7 @@ export type { SymbolResult, DefResult, RefResult } from "./graph/refs";
 export { ImpactAnalyzer } from "./graph/impact";
 export type { ImpactResult } from "./graph/impact";
 export { ModuleGraph } from "./graph/modules";
-export type { ModuleGraphResult } from "./graph/modules";
+export type { ModuleGraphResult, GraphMode } from "./graph/modules";
 
 // ── Verify ───────────────────────────────────────────────────────────────
 export { VerifyEngine } from "./verify/engine";

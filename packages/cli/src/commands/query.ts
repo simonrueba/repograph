@@ -1,25 +1,75 @@
-import { GraphQueries, ImpactAnalyzer, ModuleGraph } from "repograph-core";
+import {
+  GraphQueries,
+  ImpactAnalyzer,
+  ModuleGraph,
+  type GraphMode,
+  type ModuleGraphResult,
+} from "repograph-core";
 import { getContext } from "../lib/context";
+import { output, outputError } from "../lib/output";
 
-function extractRoot(args: string[]): string | undefined {
-  const idx = args.indexOf("--root");
+// ── Argument helpers ───────────────────────────────────────────────────
+
+function extractFlag(args: string[], flag: string): string | undefined {
+  const idx = args.indexOf(flag);
   if (idx !== -1 && idx + 1 < args.length) {
     return args[idx + 1];
   }
   return undefined;
 }
 
-function stripRootArgs(args: string[]): string[] {
-  const idx = args.indexOf("--root");
+function stripFlag(args: string[], flag: string): string[] {
+  const idx = args.indexOf(flag);
   if (idx !== -1) {
     return [...args.slice(0, idx), ...args.slice(idx + 2)];
   }
   return args;
 }
 
+function extractRoot(args: string[]): string | undefined {
+  return extractFlag(args, "--root");
+}
+
+function stripRootArgs(args: string[]): string[] {
+  return stripFlag(args, "--root");
+}
+
+// ── Output format helpers ─────────────────────────────────────────────
+
+type OutputFormat = "json" | "dot" | "mermaid";
+
+function resolveFormat(raw: string | undefined): OutputFormat {
+  if (raw === "dot" || raw === "mermaid") return raw;
+  return "json";
+}
+
+function resolveMode(raw: string | undefined): GraphMode {
+  if (raw === "semantic" || raw === "hybrid") return raw;
+  return "imports";
+}
+
+function emitGraph(
+  result: ModuleGraphResult,
+  format: OutputFormat,
+  modules: ModuleGraph,
+  outputKind: string,
+): void {
+  if (format === "dot") {
+    process.stdout.write(modules.toDot(result) + "\n");
+    return;
+  }
+  if (format === "mermaid") {
+    process.stdout.write(modules.toMermaid(result) + "\n");
+    return;
+  }
+  output(outputKind, { result });
+}
+
+// ── Main entry point ──────────────────────────────────────────────────
+
 export async function runQuery(args: string[]): Promise<void> {
   const rootArg = extractRoot(args);
-  const cleanArgs = stripRootArgs(args);
+  let cleanArgs = stripRootArgs(args);
   const subcommand = cleanArgs[0];
   const ctx = getContext(rootArg);
   const graph = new GraphQueries(ctx.store, ctx.repoRoot);
@@ -29,65 +79,95 @@ export async function runQuery(args: string[]): Promise<void> {
       case "search": {
         const query = cleanArgs[1];
         if (!query) {
-          console.error("Usage: repograph query search <name> [--root <path>]");
-          process.exit(1);
+          outputError("MISSING_ARGUMENT", "Usage: repograph query search <name> [--root <path>]");
         }
         const k = parseInt(cleanArgs[2] || "10", 10);
         const results = graph.searchSymbol(query, k);
-        console.log(JSON.stringify({ results }));
+        output("query.search", { results });
         break;
       }
 
       case "def": {
         const symbolId = cleanArgs[1];
         if (!symbolId) {
-          console.error("Usage: repograph query def <symbol-id> [--root <path>]");
-          process.exit(1);
+          outputError("MISSING_ARGUMENT", "Usage: repograph query def <symbol-id> [--root <path>]");
         }
         const result = graph.getDef(symbolId);
-        console.log(JSON.stringify({ result }));
+        output("query.def", { result });
         break;
       }
 
       case "refs": {
         const symbolId = cleanArgs[1];
         if (!symbolId) {
-          console.error("Usage: repograph query refs <symbol-id> [--root <path>]");
-          process.exit(1);
+          outputError("MISSING_ARGUMENT", "Usage: repograph query refs <symbol-id> [--root <path>]");
         }
         const results = graph.findRefs(symbolId);
-        console.log(JSON.stringify({ results }));
+        output("query.refs", { results });
         break;
       }
 
       case "impact": {
         const files = cleanArgs.slice(1).filter((a) => !a.startsWith("--"));
         if (files.length === 0) {
-          console.error(
+          outputError(
+            "MISSING_ARGUMENT",
             "Usage: repograph query impact <file1> [file2] ... [--root <path>]",
           );
-          process.exit(1);
         }
         const analyzer = new ImpactAnalyzer(ctx.store, ctx.repoRoot);
         const result = analyzer.computeImpact(files);
-        console.log(JSON.stringify({ result }));
+        output("query.impact", { result });
         break;
       }
 
       case "module-graph": {
-        const scope = cleanArgs[1]; // optional scope path
-        const moduleGraph = new ModuleGraph(ctx.store);
-        const result = moduleGraph.getGraph(scope);
-        console.log(JSON.stringify({ result }));
+        // Strip --mode and --format before reading positional arg
+        const modeRaw = extractFlag(cleanArgs, "--mode");
+        const formatRaw = extractFlag(cleanArgs, "--format");
+        cleanArgs = stripFlag(stripFlag(cleanArgs, "--mode"), "--format");
+
+        // First positional after subcommand is the optional scope path
+        const scope = cleanArgs[1]?.startsWith("--") ? undefined : cleanArgs[1];
+
+        const mode = resolveMode(modeRaw);
+        const format = resolveFormat(formatRaw);
+
+        const modules = new ModuleGraph(ctx.store);
+        const result = modules.getGraph(scope, mode);
+
+        emitGraph(result, format, modules, "query.module-graph");
+        break;
+      }
+
+      case "symbol-graph": {
+        const maxNodesRaw = extractFlag(cleanArgs, "--max-nodes");
+        const formatRaw = extractFlag(cleanArgs, "--format");
+        cleanArgs = stripFlag(stripFlag(cleanArgs, "--max-nodes"), "--format");
+
+        const symbolId = cleanArgs[1];
+        if (!symbolId) {
+          outputError(
+            "MISSING_ARGUMENT",
+            "Usage: repograph query symbol-graph <symbol-id> [--format json|dot|mermaid] [--max-nodes N] [--root <path>]",
+          );
+        }
+
+        const maxNodes = maxNodesRaw ? parseInt(maxNodesRaw, 10) : undefined;
+        const format = resolveFormat(formatRaw);
+
+        const modules = new ModuleGraph(ctx.store);
+        const result = modules.getSymbolGraph(symbolId, maxNodes);
+
+        emitGraph(result, format, modules, "query.symbol-graph");
         break;
       }
 
       default:
-        console.error(`Unknown query subcommand: ${subcommand}`);
-        console.error(
-          "Usage: repograph query <search|def|refs|impact|module-graph> [--root <path>]",
+        outputError(
+          "UNKNOWN_SUBCOMMAND",
+          `Unknown query subcommand: ${subcommand}`,
         );
-        process.exit(1);
     }
   } finally {
     ctx.db.close();

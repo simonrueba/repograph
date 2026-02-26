@@ -17,6 +17,7 @@ import {
   GraphQueries,
   ImpactAnalyzer,
   ModuleGraph,
+  type ModuleGraphResult,
 } from "repograph-core";
 
 // ── Bootstrap core services ──────────────────────────────────────────
@@ -126,15 +127,59 @@ server.tool(
       .string()
       .optional()
       .describe("Optional path prefix to scope the graph (e.g. 'packages/core/')"),
+    mode: z
+      .enum(["imports", "semantic", "hybrid"])
+      .optional()
+      .describe(
+        "Graph mode: 'imports' (structural import edges, default), 'semantic' (SCIP occurrence-derived edges with weights), or 'hybrid' (union of both).",
+      ),
+    format: z
+      .enum(["json", "dot", "mermaid"])
+      .optional()
+      .describe("Output format: 'json' (default), 'dot' (Graphviz), or 'mermaid'."),
   },
-  async ({ path }) => ({
-    content: [
-      {
-        type: "text" as const,
-        text: JSON.stringify(modules.getGraph(path)),
-      },
-    ],
-  }),
+  async ({ path, mode, format }) => {
+    const result = modules.getGraph(path, mode ?? "imports");
+    let text: string;
+    if (format === "dot") {
+      text = modules.toDot(result);
+    } else if (format === "mermaid") {
+      text = modules.toMermaid(result);
+    } else {
+      text = JSON.stringify(result);
+    }
+    return { content: [{ type: "text" as const, text }] };
+  },
+);
+
+// Tool 7: repograph.symbol_graph
+// Get the dependency subgraph centred on a specific symbol.
+server.tool(
+  "repograph.symbol_graph",
+  "Get the dependency subgraph centered on a specific symbol. Returns the symbol's definition file and all files that reference it.",
+  {
+    symbolId: z.string().describe("The symbol ID (SCIP-style identifier)"),
+    maxNodes: z
+      .number()
+      .optional()
+      .describe("Maximum number of nodes to include in the subgraph (default 50)"),
+    format: z
+      .enum(["json", "dot", "mermaid"])
+      .optional()
+      .describe("Output format: 'json' (default), 'dot' (Graphviz), or 'mermaid'."),
+  },
+  async ({ symbolId, maxNodes, format }) => {
+    const result: ModuleGraphResult = modules.getSymbolGraph(symbolId, maxNodes);
+    let text: string;
+    if (format === "dot") {
+      text = modules.toDot(result);
+    } else if (format === "mermaid") {
+      text = modules.toMermaid(result);
+    } else {
+      text = JSON.stringify(result);
+    }
+    return { content: [{ type: "text" as const, text }] };
+  },
 );
 
 // Tool 6: repograph.status

@@ -8,10 +8,27 @@ cd "$REPO_ROOT"
 # Read stdin (hook input JSON)
 INPUT=$(cat)
 
-# Prevent infinite loops — if stop hook is already active, allow stop
+GUARD_FILE=".repograph/.stop_guard"
+
+# Guard file protection — prevent recursive Stop loops
+if [ -f "$GUARD_FILE" ]; then
+  GUARD_TS=$(cat "$GUARD_FILE" | grep -o '"ts":[0-9]*' | grep -o '[0-9]*' || echo "0")
+  NOW=$(date +%s)
+  AGE=$((NOW - GUARD_TS))
+  if [ "$AGE" -lt 10 ]; then
+    exit 0
+  fi
+fi
+
+# Also check stop_hook_active from stdin as secondary guard
 if echo "$INPUT" | grep -q '"stop_hook_active":true'; then
   exit 0
 fi
+
+# Create guard file
+cleanup() { rm -f "$GUARD_FILE"; }
+trap cleanup EXIT
+echo "{\"pid\":$$,\"ts\":$(date +%s)}" > "$GUARD_FILE"
 
 # Run update — only full SCIP re-index if there are dirty files
 UPDATE_OUTPUT=$(bun run packages/cli/src/index.ts update 2>/dev/null) || true
@@ -21,14 +38,12 @@ if [ "$STALE_COUNT" -gt 0 ]; then
 fi
 
 VERIFY_OUTPUT=$(bun run packages/cli/src/index.ts verify 2>&1) || true
-VERIFY_STATUS=$(echo "$VERIFY_OUTPUT" | grep -c 'REPOGRAPH_VERIFY: OK' || true)
 
-if [ "$VERIFY_STATUS" -eq 0 ]; then
-  # Verification failed — block stop
-  SUMMARY=$(echo "$VERIFY_OUTPUT" | head -1)
-  echo "{\"decision\":\"block\",\"reason\":\"RepoGraph verification failed: $SUMMARY\"}"
+# Parse the envelope — check "ok":true or "ok":false
+if echo "$VERIFY_OUTPUT" | grep -q '"ok":true'; then
   exit 0
 fi
 
-# Verification passed — allow stop
+# Verification failed — block stop, reference the full report
+echo "{\"decision\":\"block\",\"reason\":\"RepoGraph verification failed. See .repograph/verify_last.json for details.\"}"
 exit 0

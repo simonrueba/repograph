@@ -1,4 +1,4 @@
-import { existsSync } from "fs";
+import { existsSync, mkdirSync, renameSync } from "fs";
 import { execSync } from "child_process";
 import { join, basename } from "path";
 import type { Indexer, IndexResult } from "./types";
@@ -17,13 +17,15 @@ export class ScipPythonIndexer implements Indexer {
   run(repoRoot: string, opts?: { targetDir?: string }): IndexResult {
     const cwd = opts?.targetDir ?? repoRoot;
     const projectName = basename(cwd);
-    const outputPath = join(cwd, "index.scip");
+    const cacheDir = join(repoRoot, ".repograph", "cache", "scip");
+    mkdirSync(cacheDir, { recursive: true });
+    const cachedPath = join(cacheDir, "index-python.scip");
     const errors: string[] = [];
     const start = performance.now();
 
     try {
       execSync(
-        `uvx scip-python index ${cwd} --project-name=${projectName} --output=${outputPath}`,
+        `uvx scip-python index ${cwd} --project-name=${projectName} --output=${cachedPath}`,
         {
           cwd,
           timeout: 120_000,
@@ -35,7 +37,7 @@ export class ScipPythonIndexer implements Indexer {
       if (stderr) {
         errors.push(stderr);
       }
-      if (err.status !== 0 && !existsSync(outputPath)) {
+      if (err.status !== 0 && !existsSync(cachedPath)) {
         errors.push(`scip-python exited with code ${err.status}`);
       }
     }
@@ -43,7 +45,7 @@ export class ScipPythonIndexer implements Indexer {
     const duration = performance.now() - start;
 
     return {
-      scipFilePath: outputPath,
+      scipFilePath: cachedPath,
       language: "python",
       filesIndexed: 0, // actual count determined after parsing the SCIP file
       errors,

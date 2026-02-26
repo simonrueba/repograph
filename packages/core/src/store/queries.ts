@@ -205,4 +205,53 @@ export class StoreQueries {
   clearAllOccurrences(): void {
     this.db.exec("DELETE FROM occurrences");
   }
+
+  // ── Meta ─────────────────────────────────────────────────────────
+
+  getMeta(key: string): string | null {
+    const row = this.db
+      .query("SELECT value FROM meta WHERE key = ?1")
+      .get(key) as { value: string } | null;
+    return row?.value ?? null;
+  }
+
+  setMeta(key: string, value: string): void {
+    this.db
+      .query(
+        `INSERT INTO meta (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      )
+      .run(key, value);
+  }
+
+  // ── Dirty set ──────────────────────────────────────────────────
+
+  markDirty(path: string): void {
+    this.db
+      .query(
+        `INSERT INTO dirty (path, changed_at) VALUES (?1, ?2)
+         ON CONFLICT(path) DO UPDATE SET changed_at = excluded.changed_at`,
+      )
+      .run(path, Date.now());
+  }
+
+  clearDirty(path: string): void {
+    this.db.query("DELETE FROM dirty WHERE path = ?1").run(path);
+  }
+
+  clearAllDirty(): void {
+    this.db.exec("DELETE FROM dirty");
+  }
+
+  getDirtyPaths(): { path: string; changed_at: number }[] {
+    return this.db
+      .query("SELECT path, changed_at FROM dirty ORDER BY changed_at DESC")
+      .all() as { path: string; changed_at: number }[];
+  }
+
+  getDirtyCount(): number {
+    return (
+      this.db.query("SELECT COUNT(*) as count FROM dirty").get() as { count: number }
+    ).count;
+  }
 }

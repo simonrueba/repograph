@@ -48,68 +48,42 @@ describe("VerifyEngine", () => {
     writeFileSync(fullPath, content);
   }
 
-  function hashContent(content: string): string {
-    const hasher = new Bun.CryptoHasher("sha256");
-    hasher.update(content);
-    return hasher.digest("hex");
-  }
-
   // ── index-freshness check ───────────────────────────────────────────
 
   describe("checkIndexFreshness", () => {
-    it("should pass when all indexed files match disk", () => {
-      const content = "export function add(a: number, b: number) { return a + b; }";
-      writeSourceFile("src/math.ts", content);
-      queries.upsertFile({
-        path: "src/math.ts",
-        language: "typescript",
-        hash: hashContent(content),
-      });
-
+    it("should pass when dirty set is empty", () => {
       const result = checkIndexFreshness(queries, repoRoot);
       expect(result.passed).toBe(true);
       expect(result.issues).toHaveLength(0);
     });
 
-    it("should fail when a file on disk has a different hash than indexed", () => {
-      writeSourceFile("src/math.ts", "export function add() {}");
-      queries.upsertFile({
-        path: "src/math.ts",
-        language: "typescript",
-        hash: "stale-hash-from-previous-index",
-      });
+    it("should fail when dirty set has entries and no full index ran", () => {
+      queries.markDirty("src/math.ts");
 
       const result = checkIndexFreshness(queries, repoRoot);
       expect(result.passed).toBe(false);
       expect(result.issues.length).toBeGreaterThan(0);
-      expect(result.issues[0].type).toBe("STALE_INDEX");
+      expect(result.issues[0].type).toBe("INDEX_STALE");
       expect(result.issues[0].path).toBe("src/math.ts");
     });
 
-    it("should detect new files not yet indexed", () => {
-      writeSourceFile("src/new-file.ts", "export const x = 1;");
+    it("should pass when full index timestamp covers dirty entries", () => {
+      queries.markDirty("src/math.ts");
+      // Simulate a full index that happened after the dirty entry
+      queries.setMeta("last_full_scip_index_ts", String(Date.now() + 1000));
+
+      const result = checkIndexFreshness(queries, repoRoot);
+      expect(result.passed).toBe(true);
+      expect(result.issues).toHaveLength(0);
+    });
+
+    it("should fail when dirty entry is newer than last full index", () => {
+      queries.setMeta("last_full_scip_index_ts", String(Date.now() - 10000));
+      queries.markDirty("src/new-file.ts");
 
       const result = checkIndexFreshness(queries, repoRoot);
       expect(result.passed).toBe(false);
       expect(result.issues.some((i) => i.path === "src/new-file.ts")).toBe(true);
-    });
-
-    it("should skip non-source files", () => {
-      writeSourceFile("README.md", "# Hello");
-      writeSourceFile("data.json", "{}");
-
-      const result = checkIndexFreshness(queries, repoRoot);
-      expect(result.passed).toBe(true);
-      expect(result.issues).toHaveLength(0);
-    });
-
-    it("should skip node_modules and dotfile directories", () => {
-      writeSourceFile("node_modules/lib/index.ts", "export const x = 1;");
-      writeSourceFile(".git/hooks/pre-commit.js", "#!/usr/bin/env node");
-
-      const result = checkIndexFreshness(queries, repoRoot);
-      expect(result.passed).toBe(true);
-      expect(result.issues).toHaveLength(0);
     });
   });
 
@@ -189,14 +163,7 @@ describe("VerifyEngine", () => {
 
   describe("VerifyEngine.verify()", () => {
     it("should return OK when all checks pass", () => {
-      const content = "export const x = 1;";
-      writeSourceFile("src/index.ts", content);
-      queries.upsertFile({
-        path: "src/index.ts",
-        language: "typescript",
-        hash: hashContent(content),
-      });
-      // No edits logged, so test coverage passes
+      // Dirty set is empty, no edits logged — all checks pass
       const engine = new VerifyEngine(queries, ledger, repoRoot);
       const report = engine.verify();
 
@@ -208,12 +175,7 @@ describe("VerifyEngine", () => {
     });
 
     it("should return FAIL when index is stale", () => {
-      writeSourceFile("src/index.ts", "export const x = 2;");
-      queries.upsertFile({
-        path: "src/index.ts",
-        language: "typescript",
-        hash: "old-hash",
-      });
+      queries.markDirty("src/index.ts");
 
       const engine = new VerifyEngine(queries, ledger, repoRoot);
       const report = engine.verify();
@@ -233,12 +195,7 @@ describe("VerifyEngine", () => {
     });
 
     it("should include summary listing failed check names", () => {
-      writeSourceFile("src/index.ts", "export const x = 2;");
-      queries.upsertFile({
-        path: "src/index.ts",
-        language: "typescript",
-        hash: "old-hash",
-      });
+      queries.markDirty("src/index.ts");
       ledger.log("edit", { file: "src/main.ts" });
 
       const engine = new VerifyEngine(queries, ledger, repoRoot);
