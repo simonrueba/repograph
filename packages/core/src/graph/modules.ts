@@ -13,8 +13,8 @@ export interface ModuleGraphResult {
  * - `"imports"` (default): uses the structural `edges` table (kind = imports/exports).
  * - `"semantic"`: derives edges from SCIP occurrence data — a reference to a symbol
  *   defined in another file creates a directed edge from the referencing file to the
- *   defining file.  Each edge carries a `weight` equal to the number of distinct
- *   symbols shared between the two files.
+ *   defining file.  Each edge carries a `weight` equal to the total number of
+ *   reference occurrences from the source file to symbols defined in the target file.
  * - `"hybrid"`: union of both modes.  Each edge is tagged with its origin via `kind`:
  *   `"import"`, `"semantic"`, or `"import+semantic"`.
  */
@@ -205,7 +205,7 @@ export class ModuleGraph {
     nodes: ModuleGraphResult["nodes"],
     nodePathSet: Set<string>,
   ): ModuleGraphResult["edges"] {
-    // weight map: "fromPath\0toPath" → count of shared symbols
+    // weight map: "fromPath\0toPath" → total reference occurrence count
     const weightMap = new Map<string, number>();
 
     for (const node of nodes) {

@@ -34,7 +34,13 @@ LOCK_DIR=".repograph/.stop_lock"
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   # Lock exists — check if it's stale (> 120s old)
   if [ -f "$LOCK_DIR/pid" ]; then
-    LOCK_AGE=$(( $(date +%s) - $(stat -f %m "$LOCK_DIR/pid" 2>/dev/null || echo "0") ))
+    # Cross-platform stat: BSD/macOS uses -f %m, GNU/Linux uses -c %Y
+    if stat -f %m "$LOCK_DIR/pid" >/dev/null 2>&1; then
+      LOCK_MTIME=$(stat -f %m "$LOCK_DIR/pid")
+    else
+      LOCK_MTIME=$(stat -c %Y "$LOCK_DIR/pid" 2>/dev/null || echo "0")
+    fi
+    LOCK_AGE=$(( $(date +%s) - LOCK_MTIME ))
     if [ "$LOCK_AGE" -gt 120 ]; then
       rm -rf "$LOCK_DIR"
       mkdir "$LOCK_DIR" 2>/dev/null || exit 0

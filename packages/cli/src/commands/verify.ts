@@ -17,7 +17,8 @@ export async function runVerify(args: string[]): Promise<void> {
 
   ctx.db.close();
 
-  output("verify", report);
+  // Redact stdout too — LLMs see stdout via hook output
+  output("verify", redactReport(report));
 
   if (report.status !== "OK") {
     process.exit(1);

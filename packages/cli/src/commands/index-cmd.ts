@@ -62,6 +62,7 @@ function walkSourceFiles(
 }
 
 export async function runIndex(args: string[]): Promise<void> {
+  const structuralOnly = args.includes("--structural-only");
   const rootArg = args.find((a) => !a.startsWith("--"));
   const ctx = getContext(rootArg);
   const sourceFiles = walkSourceFiles(ctx.repoRoot, ctx.repoRoot);
@@ -91,6 +92,15 @@ export async function runIndex(args: string[]): Promise<void> {
 
   // Record structural index timestamp
   ctx.store.setMeta("last_structural_index_ts", String(Date.now()));
+
+  // Skip SCIP indexing if --structural-only
+  if (structuralOnly) {
+    ctx.store.clearAllDirty();
+    ctx.ledger.log("index", { fileCount: sourceFiles.length, indexers: [], structuralOnly: true });
+    ctx.db.close();
+    output("index", { fileCount: sourceFiles.length, indexers: [] });
+    return;
+  }
 
   // Detect projects for per-project SCIP indexing
   const projects = detectProjects(ctx.repoRoot);
