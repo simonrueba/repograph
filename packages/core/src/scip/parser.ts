@@ -53,22 +53,72 @@ function extractSymbolName(scipSymbol: string): string {
 
 /**
  * Map SCIP SymbolInformation.Kind enum values to human-readable strings.
+ *
+ * Values from scip.proto `SymbolInformation.Kind` enum.
  */
 function scipKindToString(kind?: number): string | undefined {
+  if (!kind) return undefined; // 0 = UnspecifiedKind
   const kinds: Record<number, string> = {
-    2: "class",
-    3: "method",
-    4: "variable",
-    5: "function",
-    6: "interface",
-    7: "module",
-    8: "type",
-    9: "enum",
-    10: "enum_member",
-    11: "property",
-    12: "parameter",
+    1: "array",
+    7: "class",
+    8: "constant",
+    9: "constructor",
+    11: "enum",
+    12: "enum_member",
+    15: "field",
+    17: "function",
+    18: "getter",
+    21: "interface",
+    25: "macro",
+    26: "method",
+    29: "module",
+    30: "namespace",
+    33: "object",
+    35: "package",
+    37: "parameter",
+    41: "property",
+    45: "setter",
+    49: "struct",
+    53: "trait",
+    54: "type",
+    55: "type_alias",
+    58: "type_parameter",
+    61: "variable",
+    66: "abstract_method",
+    80: "static_method",
+    81: "static_property",
+    82: "static_variable",
   };
-  return kind ? kinds[kind] : undefined;
+  return kinds[kind];
+}
+
+/**
+ * Infer symbol kind from SCIP symbol descriptor suffixes.
+ *
+ * Many indexers (including scip-typescript) emit Kind=0 (UnspecifiedKind)
+ * for all symbols.  The symbol string's descriptor chain encodes structural
+ * information we can use as a fallback:
+ *
+ *   - `#`           → type (class / interface)
+ *   - `().`         → method (if preceded by `#`) or function
+ *   - `(paramName)` → parameter
+ *   - `[name]`      → type_parameter
+ *   - `.`           → variable (catch-all term descriptor)
+ */
+function inferKindFromSymbol(symbol: string): string | undefined {
+  // Parameter: ends with `(name)` — a named parameter descriptor
+  if (/\([\w$]+\)$/.test(symbol)) return "parameter";
+  // Type parameter: ends with `[name]`
+  if (/\[[\w$]+\]$/.test(symbol)) return "type_parameter";
+  // Type: ends with `#` — a type descriptor (class, interface, etc.)
+  if (symbol.endsWith("#")) return "class";
+  // Method: `().` preceded by `#` somewhere — method on a type
+  if (/#[^/]*\(\)\.$/.test(symbol)) return "method";
+  // Function: ends with `().` without a preceding `#` — top-level function
+  if (/\(\)\.$/.test(symbol)) return "function";
+  // Variable: ends with `.` — a generic term descriptor
+  if (symbol.endsWith(".")) return "variable";
+  return undefined;
 }
 
 export class ScipParser {
@@ -147,7 +197,7 @@ export class ScipParser {
       for (const sym of doc.symbols || []) {
         store.upsertSymbol({
           id: sym.symbol,
-          kind: scipKindToString(sym.kind),
+          kind: scipKindToString(sym.kind) ?? inferKindFromSymbol(sym.symbol),
           name: sym.displayName || extractSymbolName(sym.symbol),
           file_path: filePath,
           doc: sym.documentation?.join("\n"),
@@ -177,7 +227,7 @@ export class ScipParser {
           const existing = store.getSymbol(occ.symbol);
           store.upsertSymbol({
             id: occ.symbol,
-            kind: existing?.kind,
+            kind: existing?.kind ?? inferKindFromSymbol(occ.symbol),
             name: existing?.name || extractSymbolName(occ.symbol),
             file_path: filePath,
             range_start: packed.start,
