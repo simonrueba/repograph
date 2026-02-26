@@ -1,7 +1,12 @@
 import * as protobuf from "protobufjs";
 import { join } from "path";
 import { decodeScipRange, packRange, SymbolRole } from "./types";
-import type { StoreQueries } from "../store/queries";
+import type {
+  StoreQueries,
+  SymbolRecord,
+  EdgeRecord,
+  OccurrenceRecord,
+} from "../store/queries";
 
 /**
  * Extract a human-readable name from a SCIP symbol string.
@@ -179,6 +184,9 @@ export class ScipParser {
     // Prefix for converting SCIP-relative paths to repo-root-relative paths
     const pathPrefix = projectRoot ? projectRoot.replace(/\/$/, "") + "/" : "";
 
+    // In-memory symbol cache — avoids per-occurrence SELECTs
+    const symbolCache = new Map<string, SymbolRecord>();
+
     // Wrap entire ingest in a transaction for atomicity and performance
     store.transaction(() => {
 
@@ -193,17 +201,28 @@ export class ScipParser {
       store.clearOccurrencesForFile(filePath);
       filesIngested++;
 
-      // Process symbol information (documentation, kinds)
-      for (const sym of doc.symbols || []) {
-        store.upsertSymbol({
+      // Process symbol information (documentation, kinds) — batch upsert
+      const docSymbols = doc.symbols || [];
+      const symbolRecords: SymbolRecord[] = [];
+      for (const sym of docSymbols) {
+        const record: SymbolRecord = {
           id: sym.symbol,
           kind: scipKindToString(sym.kind) ?? inferKindFromSymbol(sym.symbol),
           name: sym.displayName || extractSymbolName(sym.symbol),
           file_path: filePath,
           doc: sym.documentation?.join("\n"),
-        });
-        symbolsIngested++;
+        };
+        symbolRecords.push(record);
+        symbolCache.set(sym.symbol, record);
       }
+      store.upsertSymbols(symbolRecords);
+      symbolsIngested += symbolRecords.length;
+
+      // Accumulate edges and occurrences per document, flush once at end
+      const pendingEdges: EdgeRecord[] = [];
+      const pendingOccurrences: OccurrenceRecord[] = [];
+      // Definition symbols discovered during occurrence processing — upserted after
+      const defSymbolUpdates: SymbolRecord[] = [];
 
       // Process occurrences (usages of symbols in this file)
       for (const occ of doc.occurrences || []) {
@@ -213,19 +232,18 @@ export class ScipParser {
         const packed = packRange(range);
         const roles = occ.symbolRoles || 0;
 
-        store.upsertOccurrence({
+        pendingOccurrences.push({
           file_path: filePath,
           range_start: packed.start,
           range_end: packed.end,
           symbol_id: occ.symbol,
           roles,
         });
-        occurrencesIngested++;
 
         if (roles & SymbolRole.Definition) {
           // Update the symbol record with its definition location
-          const existing = store.getSymbol(occ.symbol);
-          store.upsertSymbol({
+          const existing = symbolCache.get(occ.symbol) ?? store.getSymbol(occ.symbol);
+          const updated: SymbolRecord = {
             id: occ.symbol,
             kind: existing?.kind ?? inferKindFromSymbol(occ.symbol),
             name: existing?.name || extractSymbolName(occ.symbol),
@@ -233,15 +251,17 @@ export class ScipParser {
             range_start: packed.start,
             range_end: packed.end,
             doc: existing?.doc,
-          });
-          store.insertEdge({
+          };
+          defSymbolUpdates.push(updated);
+          symbolCache.set(occ.symbol, updated);
+          pendingEdges.push({
             source: filePath,
             target: occ.symbol,
             kind: "defines",
             confidence: "high",
           });
         } else {
-          store.insertEdge({
+          pendingEdges.push({
             source: filePath,
             target: occ.symbol,
             kind: "references",
@@ -249,6 +269,12 @@ export class ScipParser {
           });
         }
       }
+
+      // Flush all batched operations for this document
+      store.upsertOccurrences(pendingOccurrences);
+      store.upsertSymbols(defSymbolUpdates);
+      store.insertEdges(pendingEdges);
+      occurrencesIngested += pendingOccurrences.length;
     }
 
     }); // end transaction

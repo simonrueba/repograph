@@ -138,7 +138,7 @@ export class VerifyEngine {
     }
 
     // Non-blocking warning: files indexed but no symbols (SCIP likely failed)
-    const symbolCount = this.store.searchSymbols("").length;
+    const symbolCount = this.store.getSymbolCount();
     if (allFiles.length > 0 && symbolCount === 0) {
       if (!report.recommendations) report.recommendations = [];
       report.recommendations.push(
