@@ -162,8 +162,19 @@ describe("VerifyEngine", () => {
   // ── Full engine ─────────────────────────────────────────────────────
 
   describe("VerifyEngine.verify()", () => {
+    it("should return FAIL when index is empty (no files indexed)", () => {
+      const engine = new VerifyEngine(queries, ledger, repoRoot);
+      const report = engine.verify();
+
+      expect(report.status).toBe("FAIL");
+      expect(report.checks.indexFreshness.passed).toBe(false);
+      expect(report.summary).toContain("indexFreshness");
+    });
+
     it("should return OK when all checks pass", () => {
-      // Dirty set is empty, no edits logged — all checks pass
+      // Insert a file so the index is non-empty
+      queries.upsertFile({ path: "src/app.ts", language: "typescript", hash: "abc123" });
+
       const engine = new VerifyEngine(queries, ledger, repoRoot);
       const report = engine.verify();
 
@@ -175,6 +186,7 @@ describe("VerifyEngine", () => {
     });
 
     it("should return FAIL when index is stale", () => {
+      queries.upsertFile({ path: "src/index.ts", language: "typescript", hash: "abc" });
       queries.markDirty("src/index.ts");
 
       const engine = new VerifyEngine(queries, ledger, repoRoot);
@@ -185,6 +197,7 @@ describe("VerifyEngine", () => {
     });
 
     it("should return FAIL when tests are missing after edit", () => {
+      queries.upsertFile({ path: "src/main.ts", language: "typescript", hash: "abc" });
       ledger.log("edit", { file: "src/main.ts" });
 
       const engine = new VerifyEngine(queries, ledger, repoRoot);
@@ -195,6 +208,7 @@ describe("VerifyEngine", () => {
     });
 
     it("should include summary listing failed check names", () => {
+      queries.upsertFile({ path: "src/index.ts", language: "typescript", hash: "abc" });
       queries.markDirty("src/index.ts");
       ledger.log("edit", { file: "src/main.ts" });
 
@@ -207,6 +221,8 @@ describe("VerifyEngine", () => {
     });
 
     it("should return structured report shape", () => {
+      queries.upsertFile({ path: "src/app.ts", language: "typescript", hash: "abc" });
+
       const engine = new VerifyEngine(queries, ledger, repoRoot);
       const report = engine.verify();
 

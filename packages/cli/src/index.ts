@@ -44,6 +44,11 @@ async function main() {
       await runDirty(args.slice(1));
       break;
     }
+    case "setup": {
+      const { runSetup } = await import("./commands/setup");
+      await runSetup(args.slice(1));
+      break;
+    }
     case "doctor": {
       const { runDoctor } = await import("./commands/doctor");
       runDoctor(args.slice(1));
@@ -53,7 +58,7 @@ async function main() {
       const { outputError } = await import("./lib/output");
       outputError(
         "UNKNOWN_COMMAND",
-        `Unknown command: ${command}. Usage: repograph <init|index|update|query|verify|ledger|status|dirty|doctor>`,
+        `Unknown command: ${command}. Usage: repograph <setup|init|index|update|query|verify|ledger|status|dirty|doctor>`,
       );
     }
   }
