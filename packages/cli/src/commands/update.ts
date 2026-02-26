@@ -186,7 +186,7 @@ export async function runUpdate(args: string[]): Promise<void> {
             });
             const parser = new ScipParser();
             const index = await parser.parse(result.scipFilePath);
-            const ingested = parser.ingest(index, ctx.store, ctx.repoRoot);
+            const ingested = parser.ingest(index, ctx.store, ctx.repoRoot, project.projectId);
             indexerResults.push({
               indexer: "scip-typescript",
               result: { ...result, ...ingested, projectId: project.projectId },
@@ -208,7 +208,7 @@ export async function runUpdate(args: string[]): Promise<void> {
             });
             const parser = new ScipParser();
             const index = await parser.parse(result.scipFilePath);
-            const ingested = parser.ingest(index, ctx.store, ctx.repoRoot);
+            const ingested = parser.ingest(index, ctx.store, ctx.repoRoot, project.projectId);
             indexerResults.push({
               indexer: "scip-python",
               result: { ...result, ...ingested, projectId: project.projectId },

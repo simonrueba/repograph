@@ -109,6 +109,7 @@ export class ScipParser {
     index: unknown,
     store: StoreQueries,
     _repoRoot: string,
+    projectRoot?: string,
   ): {
     filesIngested: number;
     symbolsIngested: number;
@@ -125,11 +126,14 @@ export class ScipParser {
     let symbolsIngested = 0;
     let occurrencesIngested = 0;
 
+    // Prefix for converting SCIP-relative paths to repo-root-relative paths
+    const pathPrefix = projectRoot ? projectRoot.replace(/\/$/, "") + "/" : "";
+
     // Wrap entire ingest in a transaction for atomicity and performance
     store.transaction(() => {
 
     for (const doc of idx.documents || []) {
-      const filePath = doc.relativePath;
+      const filePath = pathPrefix + doc.relativePath;
       const existingFile = store.getFile(filePath);
       store.upsertFile({
         path: filePath,
