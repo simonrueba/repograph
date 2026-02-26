@@ -131,6 +131,35 @@ export class StoreQueries {
       );
   }
 
+  /**
+   * Batch-upsert symbols using a single cached prepared statement.
+   */
+  upsertSymbols(symbols: SymbolRecord[]): void {
+    if (symbols.length === 0) return;
+    const stmt = this.db.query(
+      `INSERT INTO symbols (id, kind, name, file_path, range_start, range_end, doc)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+       ON CONFLICT(id) DO UPDATE SET
+         kind        = excluded.kind,
+         name        = excluded.name,
+         file_path   = excluded.file_path,
+         range_start = excluded.range_start,
+         range_end   = excluded.range_end,
+         doc         = excluded.doc`,
+    );
+    for (const s of symbols) {
+      stmt.run(
+        s.id,
+        s.kind ?? null,
+        s.name,
+        s.file_path ?? null,
+        s.range_start ?? null,
+        s.range_end ?? null,
+        s.doc ?? null,
+      );
+    }
+  }
+
   getSymbol(id: string): SymbolRecord | null {
     return (
       (this.db
@@ -166,6 +195,20 @@ export class StoreQueries {
          VALUES (?1, ?2, ?3, ?4, ?5)`,
       )
       .run(occ.file_path, occ.range_start, occ.range_end, occ.symbol_id, occ.roles);
+  }
+
+  /**
+   * Batch-upsert occurrences using a single cached prepared statement.
+   */
+  upsertOccurrences(occs: OccurrenceRecord[]): void {
+    if (occs.length === 0) return;
+    const stmt = this.db.query(
+      `INSERT OR REPLACE INTO occurrences (file_path, range_start, range_end, symbol_id, roles)
+       VALUES (?1, ?2, ?3, ?4, ?5)`,
+    );
+    for (const occ of occs) {
+      stmt.run(occ.file_path, occ.range_start, occ.range_end, occ.symbol_id, occ.roles);
+    }
   }
 
   getOccurrencesBySymbol(symbolId: string): OccurrenceRecord[] {
@@ -217,6 +260,22 @@ export class StoreQueries {
       .all(target) as EdgeRecord[];
   }
 
+  /**
+   * Batch-insert edges using a single cached prepared statement.
+   * Bun SQLite caches compiled statements, making stmt.run() in a loop
+   * faster than multi-row INSERT (which rebuilds SQL per chunk).
+   */
+  insertEdges(edges: EdgeRecord[]): void {
+    if (edges.length === 0) return;
+    const stmt = this.db.query(
+      `INSERT INTO edges (source, target, kind, confidence)
+       VALUES (?1, ?2, ?3, ?4)`,
+    );
+    for (const edge of edges) {
+      stmt.run(edge.source, edge.target, edge.kind, edge.confidence ?? "high");
+    }
+  }
+
   clearEdgesForFile(source: string): void {
     this.db.query("DELETE FROM edges WHERE source = ?1").run(source);
   }
@@ -231,6 +290,23 @@ export class StoreQueries {
 
   clearAllOccurrences(): void {
     this.db.exec("DELETE FROM occurrences");
+  }
+
+  getSymbolCount(): number {
+    return (
+      this.db.query("SELECT COUNT(*) as count FROM symbols").get() as { count: number }
+    ).count;
+  }
+
+  getSymbolFileMap(): Map<string, string> {
+    const rows = this.db
+      .query("SELECT id, file_path FROM symbols WHERE file_path IS NOT NULL")
+      .all() as { id: string; file_path: string }[];
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      map.set(row.id, row.file_path);
+    }
+    return map;
   }
 
   // ── Meta ─────────────────────────────────────────────────────────

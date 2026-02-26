@@ -89,13 +89,10 @@ export class ModuleGraph {
       filePathSet.add(occ.file_path);
     }
 
-    // Build node list — fetch language from the files table where possible
-    const allFiles = this.store.getAllFiles();
-    const fileInfoMap = new Map(allFiles.map((f) => [f.path, f]));
-
+    // Build node list — fetch language per file instead of loading all files
     const nodes: ModuleGraphResult["nodes"] = [];
     for (const p of filePathSet) {
-      const info = fileInfoMap.get(p);
+      const info = this.store.getFile(p);
       nodes.push({ path: p, language: info?.language ?? "unknown" });
     }
 
@@ -205,6 +202,9 @@ export class ModuleGraph {
     nodes: ModuleGraphResult["nodes"],
     nodePathSet: Set<string>,
   ): ModuleGraphResult["edges"] {
+    // Pre-load symbol → file_path map to avoid per-occurrence DB lookups
+    const symbolFileMap = this.store.getSymbolFileMap();
+
     // weight map: "fromPath\0toPath" → total reference occurrence count
     const weightMap = new Map<string, number>();
 
@@ -215,10 +215,8 @@ export class ModuleGraph {
         // Skip definition occurrences — we want references
         if (occ.roles & DEFINITION_ROLE) continue;
 
-        const symbol = this.store.getSymbol(occ.symbol_id);
-        if (!symbol?.file_path) continue;
-
-        const defFile = symbol.file_path;
+        const defFile = symbolFileMap.get(occ.symbol_id);
+        if (!defFile) continue;
         if (defFile === node.path) continue;
 
         // Only emit edges to files that are in scope (in nodePathSet)
