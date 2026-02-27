@@ -34,5 +34,12 @@ if [ -n "$FILE_PATH" ]; then
   esac
 fi
 
-$BIN update 2>/dev/null || true
+# Targeted update: only process the edited file (fast path).
+# Falls back to full scan if no file path was extracted.
+if [ -n "$FILE_PATH" ]; then
+  REL_PATH="${FILE_PATH#$REPO_ROOT/}"
+  $BIN update --files "$REL_PATH" 2>/dev/null || true
+else
+  $BIN update 2>/dev/null || true
+fi
 $BIN ledger log edit "{}" 2>/dev/null || true
