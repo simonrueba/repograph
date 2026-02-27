@@ -28,7 +28,7 @@ bun run packages/cli/src/index.ts setup /path/to/your/project
 
 This creates:
 - `.repograph/` — SQLite database, hook scripts, SCIP cache
-- `.claude/settings.json` — Claude Code hooks (auto-update + verify gate)
+- `.claude/settings.json` — Claude Code hooks (impact context on edit, auto-update, verify gate)
 - `.mcp.json` — MCP server config (8 read-only tools)
 
 Then restart Claude Code in your project to pick up the hooks and MCP server.
@@ -134,8 +134,9 @@ The MCP server starts gracefully even if `.repograph/` doesn't exist yet — it 
 
 ### What the hooks do
 
-- **Post-edit hook** (`Edit|Write` matcher): marks edited files dirty, runs `repograph update`, logs the edit to the ledger
-- **Post-test hook** (`Bash` matcher): detects test runner commands (vitest, jest, pytest, bun test, mocha, ava, cargo test, go test, playwright), logs `test_run` to the ledger
+- **Pre-edit impact hook** (`Edit|Write` PreToolUse): runs `repograph impact` before every source file edit and injects the blast radius (changed symbols, dependent files, recommended tests) as context so Claude sees what will be affected. Silently skips test files, non-source files, and uninitialized projects. ~240ms latency.
+- **Post-edit hook** (`Edit|Write` PostToolUse): marks edited files dirty, runs `repograph update`, logs the edit to the ledger
+- **Post-test hook** (`Bash` PostToolUse): detects test runner commands (vitest, jest, pytest, bun test, mocha, ava, cargo test, go test, playwright), logs `test_run` to the ledger
 - **Stop hook**: runs structural update, then full SCIP re-index if files are dirty, then `repograph verify`. On failure, outputs `{"decision":"block","reason":"..."}` to prevent Claude from stopping until issues are fixed
 
 The stop hook uses atomic `mkdir`-based locking to prevent concurrent runs, checks `stop_hook_active` from stdin to prevent infinite loops, and has a 120s stale lock timeout.
@@ -158,7 +159,7 @@ Two-pass pipeline:
 1. **Structural pass** (instant, per-file) — regex-based extraction of `import`/`export`/`from` statements, including side-effect imports (`import "module"`), dynamic imports (`import("module")`), and Python relative imports (`from . import`). Creates file-level `imports` edges. Runs on every `update`.
 2. **SCIP pass** (slower, full project) — runs `scip-typescript` or `scip-python` per detected sub-project, producing a protobuf index. The parser decodes it and extracts symbols, occurrences (with line:col ranges), and definition/reference roles. Creates symbol-level `defines` and `references` edges. Runs on `index` and `update --full` only.
 
-Both passes write to the same SQLite database (`.repograph/index.db`). The database uses WAL mode, `busy_timeout=5000` for concurrent access from hooks, and transactions for atomic SCIP ingestion.
+Both passes write to the same SQLite database (`.repograph/index.db`). The database uses WAL mode, `busy_timeout=5000` for concurrent access from hooks, and transactions for atomic SCIP ingestion. Bulk ingestion uses index-drop/recreate and `PRAGMA synchronous=OFF` for faster writes, and skips unchanged files by content hash comparison.
 
 ### Multi-project support
 
@@ -178,7 +179,7 @@ Output formats: `json` (default), `dot` (Graphviz), `mermaid`.
 
 ```
 packages/
-  core/     repograph-core library (275+ tests)
+  core/     repograph-core library (280+ tests)
     src/
       store/       SQLite schema, queries, transactions
       scip/        protobuf parser + SCIP types
@@ -189,7 +190,7 @@ packages/
   cli/      CLI command router + hooks
     src/
       commands/    init, setup, index, update, query, verify, status, dirty, doctor, ledger
-      hooks/       post-edit.sh, post-test.sh, stop-verify.sh (portable)
+      hooks/       pre-edit-impact.sh, post-edit.sh, post-test.sh, stop-verify.sh
       lib/         context, output helpers
   mcp/      MCP stdio server (8 read-only tools)
 ```
@@ -198,7 +199,7 @@ packages/
 
 ```bash
 bun install
-bun test                  # 275 tests across 15 files
+bun test                  # 280+ tests across 15 files
 bunx tsc --noEmit         # type-check all packages
 bun run packages/cli/src/index.ts doctor  # check prerequisites
 ```
