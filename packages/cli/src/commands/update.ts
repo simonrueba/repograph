@@ -184,7 +184,7 @@ export async function runUpdate(args: string[]): Promise<void> {
   // Build knownFiles from DB when doing targeted update (avoids full walk),
   // or from the walked source files for full scan.
   const knownFiles = targetedFiles
-    ? new Set(ctx.store.getAllFiles().map((f) => f.path))
+    ? ctx.store.getFilePaths()
     : new Set(sourceFiles.map((f) => f.path));
 
   const staleSet = new Set(staleFiles);
@@ -417,7 +417,7 @@ export async function runUpdate(args: string[]): Promise<void> {
     const filesToScan = [...dirtyFiles, ...newFiles];
     for (const file of filesToScan) {
       try {
-        const code = readFileSync(file.fullPath, "utf-8");
+        const code = file.content ?? readFileSync(file.fullPath, "utf-8");
         const language = languageFromExt(file.ext);
         const refEdges = scanConfigRefs(code, file.path, language, allArtifactSymbols);
         for (const edge of refEdges) {

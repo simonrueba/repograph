@@ -11,25 +11,24 @@ cd "$REPO_ROOT"
 # Guard: skip if .ariadne/ doesn't exist (not initialized)
 [ -d ".ariadne" ] || exit 0
 
-# Resolve ariadne binary
-resolve_bin() {
-  if command -v ariadne >/dev/null 2>&1; then
-    echo "ariadne"
-  elif [ -x "node_modules/.bin/ariadne" ]; then
-    echo "node_modules/.bin/ariadne"
-  elif [ -f "packages/cli/src/index.ts" ]; then
-    echo "bun run packages/cli/src/index.ts"
-  else
-    echo "ariadne"
-  fi
-}
-BIN="$(resolve_bin)"
+# Resolve ariadne binary (cached via env var)
+if [ -n "$ARIADNE_BIN" ]; then
+  BIN="$ARIADNE_BIN"
+elif command -v ariadne >/dev/null 2>&1; then
+  BIN="ariadne"
+elif [ -x "node_modules/.bin/ariadne" ]; then
+  BIN="node_modules/.bin/ariadne"
+elif [ -f "packages/cli/src/index.ts" ]; then
+  BIN="bun run packages/cli/src/index.ts"
+else
+  BIN="ariadne"
+fi
 
-# Read stdin once
+# Read stdin once and extract file_path using native bash parameter expansion
 STDIN_JSON="$(cat)"
-
-# Extract file_path from tool_input using native bash (avoids ~200ms bun startup)
-FILE_PATH="$(echo "$STDIN_JSON" | grep -o '"file_path":"[^"]*"' | head -1 | sed 's/"file_path":"\([^"]*\)"/\1/')"
+tmp="${STDIN_JSON#*\"file_path\":\"}"
+FILE_PATH="${tmp%%\"*}"
+[[ "$FILE_PATH" == "$STDIN_JSON" ]] && FILE_PATH=""
 
 # Guard: need a file path to analyze
 [ -n "$FILE_PATH" ] || exit 0

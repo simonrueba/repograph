@@ -68,13 +68,17 @@ export class ImpactAnalyzer {
     const testFileSet = new Set<string>();
     const occurrenceCache = new Map<string, OccurrenceRecord[]>();
 
-    // 1. Find symbols defined in changed files
+    // 1. Find symbols defined in changed files (batch lookup to avoid N+1)
     for (const path of changedPaths) {
       const occs = this.store.getOccurrencesByFile(path);
+      const defSymbolIds = occs
+        .filter((occ) => occ.roles & 1)
+        .map((occ) => occ.symbol_id);
+      if (defSymbolIds.length === 0) continue;
+      const symbolMap = this.store.getSymbolsBatch(defSymbolIds);
       for (const occ of occs) {
         if (occ.roles & 1) {
-          // Definition role
-          const sym = this.store.getSymbol(occ.symbol_id);
+          const sym = symbolMap.get(occ.symbol_id);
           if (sym) {
             changedSymbols.push({ id: sym.id, name: sym.name, filePath: path });
           }
@@ -101,29 +105,31 @@ export class ImpactAnalyzer {
     }
 
     // 3. Find files that import changed files (structural edges)
+    //    Batch-fetch edges for all targets at once (both extensioned + extensionless)
+    const targetLookups: string[] = [];
+    const targetToPath = new Map<string, string>(); // map target → original changed path
     for (const path of changedPaths) {
-      // Try both the exact path (resolved with extension) and the
-      // extensionless form (legacy edges created before knownFiles resolution).
       const moduleName = path.replace(/\.[^.]+$/, "");
-      const importersByModule = this.store.getEdgesByTarget(moduleName);
-      const importersByPath = path !== moduleName ? this.store.getEdgesByTarget(path) : [];
-      const seen = new Set<string>();
-      const importers = [...importersByModule, ...importersByPath].filter((e) => {
-        if (seen.has(e.source)) return false;
-        seen.add(e.source);
-        return true;
-      });
-      for (const edge of importers) {
-        if (
-          !changedPaths.includes(edge.source) &&
-          !dependentFileSet.has(edge.source)
-        ) {
-          dependentFileSet.add(edge.source);
-          dependentFiles.push({
-            path: edge.source,
-            reason: `imports ${basename(path)}`,
-          });
-        }
+      targetLookups.push(moduleName);
+      targetToPath.set(moduleName, path);
+      if (path !== moduleName) {
+        targetLookups.push(path);
+        targetToPath.set(path, path);
+      }
+    }
+    const allImporterEdges = this.store.getEdgesByTargetBatch(targetLookups);
+    const changedPathSet = new Set(changedPaths);
+    const seenImporters = new Set<string>();
+    for (const edge of allImporterEdges) {
+      if (seenImporters.has(edge.source)) continue;
+      seenImporters.add(edge.source);
+      if (!changedPathSet.has(edge.source) && !dependentFileSet.has(edge.source)) {
+        const origPath = targetToPath.get(edge.target) ?? edge.target;
+        dependentFileSet.add(edge.source);
+        dependentFiles.push({
+          path: edge.source,
+          reason: `imports ${basename(origPath)}`,
+        });
       }
     }
 
@@ -152,11 +158,15 @@ export class ImpactAnalyzer {
     const { result: base, occurrenceCache } = this._computeImpactInternal(changedPaths);
     const snippetCache = createSnippetCache();
 
+    // Batch-fetch all symbol details at once (avoids N individual getSymbol calls)
+    const symbolIds = base.changedSymbols.map((cs) => cs.id);
+    const symbolMap = this.store.getSymbolsBatch(symbolIds);
+
     const symbolDetails: SymbolDetail[] = [];
     const keyRefs: KeyRef[] = [];
 
     for (const cs of base.changedSymbols) {
-      const sym = this.store.getSymbol(cs.id);
+      const sym = symbolMap.get(cs.id);
       if (sym) {
         const range = formatRange(sym.range_start, sym.range_end);
         const snippet = getSnippet(this.repoRoot, cs.filePath, range.startLine, snippetCache);

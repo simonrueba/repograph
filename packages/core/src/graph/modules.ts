@@ -89,10 +89,11 @@ export class ModuleGraph {
       filePathSet.add(occ.file_path);
     }
 
-    // Build node list — fetch language per file instead of loading all files
+    // Build node list — batch-fetch file info (avoids N individual getFile calls)
+    const fileMap = this.store.getFilesBatch([...filePathSet]);
     const nodes: ModuleGraphResult["nodes"] = [];
     for (const p of filePathSet) {
-      const info = this.store.getFile(p);
+      const info = fileMap.get(p);
       nodes.push({ path: p, language: info?.language ?? "unknown" });
     }
 
@@ -187,12 +188,20 @@ export class ModuleGraph {
     nodes: ModuleGraphResult["nodes"],
     _nodePathSet: Set<string>,
   ): ModuleGraphResult["edges"] {
+    // Load all import edges in one query, group by source in-memory
+    const allImportEdges = this.store.getImportEdges();
+    const exportEdges = this.store.getExportEdges();
+    const nodePathSet = new Set(nodes.map((n) => n.path));
+
     const edges: ModuleGraphResult["edges"] = [];
-    for (const node of nodes) {
-      for (const edge of this.store.getEdgesBySource(node.path)) {
-        if (edge.kind === "imports" || edge.kind === "exports") {
-          edges.push({ from: node.path, to: edge.target, kind: edge.kind });
-        }
+    for (const edge of allImportEdges) {
+      if (nodePathSet.has(edge.source)) {
+        edges.push({ from: edge.source, to: edge.target, kind: edge.kind });
+      }
+    }
+    for (const edge of exportEdges) {
+      if (nodePathSet.has(edge.source)) {
+        edges.push({ from: edge.source, to: edge.target, kind: edge.kind });
       }
     }
     return edges;

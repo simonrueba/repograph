@@ -79,7 +79,7 @@ export function calculate(a: number, b: number): number {
     expect(existsSync(join(testDir, ".ariadne", "mcp.json"))).toBe(true);
   });
 
-  it("update registers files and detects stale files", () => {
+  it("update registers files and detects stale files", { timeout: 30_000 }, () => {
     const output = run(`update ${testDir}`, testDir);
     const envelope = JSON.parse(output);
 

@@ -48,6 +48,9 @@ CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path);
 CREATE INDEX IF NOT EXISTS idx_edges_source_kind ON edges(source, kind);
 CREATE INDEX IF NOT EXISTS idx_edges_target_kind ON edges(target, kind);
 
+CREATE INDEX IF NOT EXISTS idx_ledger_event ON ledger(event, id);
+CREATE INDEX IF NOT EXISTS idx_ledger_timestamp ON ledger(timestamp);
+
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL

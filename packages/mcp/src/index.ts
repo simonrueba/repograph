@@ -269,16 +269,11 @@ server.registerTool(
   },
   async () => {
     try {
-      const files = store.getAllFiles();
-
       return ok({
-        totalFiles: files.length,
+        totalFiles: store.getFileCount(),
         totalSymbols: store.getSymbolCount(),
         dirtyCount: store.getDirtyCount(),
-        lastIndexed: files.reduce(
-          (max, f) => Math.max(max, f.indexed_at ?? 0),
-          0,
-        ),
+        lastIndexed: store.getLastIndexedAt(),
       });
     } catch (e: unknown) {
       return err(toErrorMessage(e));

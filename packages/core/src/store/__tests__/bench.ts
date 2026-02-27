@@ -400,6 +400,191 @@ banner("8. Full ingest — transaction() vs bulkTransaction()");
   console.log(`  Speedup: ${(ms1 / ms2).toFixed(1)}x`);
 }
 
+// ── Bench 9: getSymbolsBatch() vs N x getSymbol() ───────────────────
+
+banner("9. Symbol batch — getSymbol() N times vs getSymbolsBatch()");
+
+{
+  const ids: string[] = [];
+  for (let f = 0; f < NUM_FILES; f++) {
+    for (let s = 0; s < 10; s++) {
+      ids.push(`sym_${f}_${s}`);
+    }
+  }
+
+  // Individual lookups
+  const t1 = process.hrtime();
+  for (const id of ids) {
+    store.getSymbol(id);
+  }
+  const ms1 = hrMs(t1);
+
+  // Batch lookup
+  const t2 = process.hrtime();
+  store.getSymbolsBatch(ids);
+  const ms2 = hrMs(t2);
+
+  console.log(`  getSymbol() x ${ids.length}:      ${fmt(ms1)}  (${fmt(ms1 / ids.length)}/op)`);
+  console.log(`  getSymbolsBatch(${ids.length}):    ${fmt(ms2)}`);
+  console.log(`  Speedup: ${(ms1 / ms2).toFixed(1)}x`);
+}
+
+// ── Bench 10: getFilesBatch() vs N x getFile() ─────────────────────
+
+banner("10. File batch — getFile() N times vs getFilesBatch()");
+
+{
+  const paths = Array.from({ length: NUM_FILES }, (_, i) => `src/file_${i}.ts`);
+
+  // Individual lookups
+  const t1 = process.hrtime();
+  for (const p of paths) {
+    store.getFile(p);
+  }
+  const ms1 = hrMs(t1);
+
+  // Batch lookup
+  const t2 = process.hrtime();
+  store.getFilesBatch(paths);
+  const ms2 = hrMs(t2);
+
+  console.log(`  getFile() x ${paths.length}:       ${fmt(ms1)}  (${fmt(ms1 / paths.length)}/op)`);
+  console.log(`  getFilesBatch(${paths.length}):     ${fmt(ms2)}`);
+  console.log(`  Speedup: ${(ms1 / ms2).toFixed(1)}x`);
+}
+
+// ── Bench 11: getFileCount() vs getAllFiles().length ─────────────────
+
+banner("11. File count — getAllFiles().length vs getFileCount()");
+
+{
+  const ITERS = 100;
+
+  const t1 = process.hrtime();
+  for (let i = 0; i < ITERS; i++) {
+    store.getAllFiles().length;
+  }
+  const ms1 = hrMs(t1);
+
+  const t2 = process.hrtime();
+  for (let i = 0; i < ITERS; i++) {
+    store.getFileCount();
+  }
+  const ms2 = hrMs(t2);
+
+  console.log(`  getAllFiles().length x ${ITERS}: ${fmt(ms1)}  (${fmt(ms1 / ITERS)}/call)`);
+  console.log(`  getFileCount()      x ${ITERS}: ${fmt(ms2)}  (${fmt(ms2 / ITERS)}/call)`);
+  console.log(`  Speedup: ${(ms1 / ms2).toFixed(1)}x`);
+}
+
+// ── Bench 12: getLastIndexedAt() vs getAllFiles() + reduce ──────────
+
+banner("12. Last indexed — getAllFiles() + reduce vs getLastIndexedAt()");
+
+{
+  const ITERS = 100;
+
+  const t1 = process.hrtime();
+  for (let i = 0; i < ITERS; i++) {
+    const files = store.getAllFiles();
+    files.reduce((max, f) => Math.max(max, f.indexed_at ?? 0), 0);
+  }
+  const ms1 = hrMs(t1);
+
+  const t2 = process.hrtime();
+  for (let i = 0; i < ITERS; i++) {
+    store.getLastIndexedAt();
+  }
+  const ms2 = hrMs(t2);
+
+  console.log(`  getAllFiles() + reduce x ${ITERS}: ${fmt(ms1)}  (${fmt(ms1 / ITERS)}/call)`);
+  console.log(`  getLastIndexedAt()    x ${ITERS}: ${fmt(ms2)}  (${fmt(ms2 / ITERS)}/call)`);
+  console.log(`  Speedup: ${(ms1 / ms2).toFixed(1)}x`);
+}
+
+// ── Bench 13: Import edges — N x getEdgesBySource() vs getImportEdges() ──
+
+banner("13. Import edges — getEdgesBySource() per node vs getImportEdges() bulk");
+
+// Seed import edges
+store.clearAllEdges();
+store.transaction(() => {
+  for (let f = 0; f < NUM_FILES; f++) {
+    for (let r = 0; r < 5; r++) {
+      const target = (f + 1 + r) % NUM_FILES;
+      store.insertEdge({
+        source: `src/file_${f}.ts`,
+        target: `src/file_${target}.ts`,
+        kind: "imports",
+        confidence: "structural",
+      });
+    }
+  }
+});
+
+{
+  const paths = Array.from({ length: NUM_FILES }, (_, i) => `src/file_${i}.ts`);
+
+  // Per-node queries
+  const t1 = process.hrtime();
+  for (const p of paths) {
+    const edges = store.getEdgesBySource(p);
+    edges.filter((e) => e.kind === "imports");
+  }
+  const ms1 = hrMs(t1);
+
+  // Bulk query + in-memory filter
+  const t2 = process.hrtime();
+  const allEdges = store.getImportEdges();
+  const nodeSet = new Set(paths);
+  allEdges.filter((e) => nodeSet.has(e.source));
+  const ms2 = hrMs(t2);
+
+  console.log(`  getEdgesBySource() x ${paths.length}: ${fmt(ms1)}  (${fmt(ms1 / paths.length)}/call)`);
+  console.log(`  getImportEdges() + filter:  ${fmt(ms2)}`);
+  console.log(`  Speedup: ${(ms1 / ms2).toFixed(1)}x`);
+}
+
+// ── Bench 14: Schema skip on warm DB open ───────────────────────────
+
+banner("14. DB open — cold (full schema) vs warm (version check skip)");
+
+{
+  const ITERS = 20;
+  const warmDir = mkdtempSync(join(tmpdir(), "ariadne-bench-warm-"));
+
+  // Cold: first open always runs schema
+  const coldTimes: number[] = [];
+  for (let i = 0; i < ITERS; i++) {
+    const p = join(warmDir, `cold_${i}.db`);
+    const t = process.hrtime();
+    const d = createDatabase(p);
+    coldTimes.push(hrMs(t));
+    d.close();
+  }
+  const coldAvg = coldTimes.reduce((a, b) => a + b, 0) / ITERS;
+
+  // Warm: re-open same DB (schema version matches, skip)
+  const warmPath = join(warmDir, "warm.db");
+  const warmInit = createDatabase(warmPath);
+  warmInit.close();
+
+  const warmTimes: number[] = [];
+  for (let i = 0; i < ITERS; i++) {
+    const t = process.hrtime();
+    const d = createDatabase(warmPath);
+    warmTimes.push(hrMs(t));
+    d.close();
+  }
+  const warmAvg = warmTimes.reduce((a, b) => a + b, 0) / ITERS;
+
+  console.log(`  Cold open (new DB)  x ${ITERS}: avg ${fmt(coldAvg)}`);
+  console.log(`  Warm open (reuse)   x ${ITERS}: avg ${fmt(warmAvg)}`);
+  console.log(`  Speedup: ${(coldAvg / warmAvg).toFixed(1)}x`);
+
+  rmSync(warmDir, { recursive: true, force: true });
+}
+
 // ── Cleanup ──────────────────────────────────────────────────────────
 
 db.close();
