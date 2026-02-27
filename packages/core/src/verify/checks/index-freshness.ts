@@ -1,4 +1,11 @@
+import { extname } from "path";
 import type { StoreQueries } from "../../store/queries";
+
+const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".py"]);
+
+function isSourceFile(filePath: string): boolean {
+  return SOURCE_EXTENSIONS.has(extname(filePath));
+}
 
 export interface FreshnessIssue {
   type: "INDEX_STALE";
@@ -14,12 +21,13 @@ export interface FreshnessResult {
 /**
  * Check whether the index is fresh by examining the dirty set.
  * Fails if there are unindexed changes since the last full SCIP pass.
+ * Non-source files are filtered out since SCIP can never index them.
  */
 export function checkIndexFreshness(
   store: StoreQueries,
   _repoRoot: string,
 ): FreshnessResult {
-  const dirtyPaths = store.getDirtyPaths();
+  const dirtyPaths = store.getDirtyPaths().filter((d) => isSourceFile(d.path));
 
   if (dirtyPaths.length === 0) {
     return { passed: true, issues: [] };

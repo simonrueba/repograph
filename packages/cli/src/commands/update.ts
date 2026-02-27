@@ -141,10 +141,11 @@ export async function runUpdate(args: string[]): Promise<void> {
   // Record structural index timestamp
   ctx.store.setMeta("last_structural_index_ts", String(Date.now()));
 
-  // Run SCIP indexers if --full
+  // Run SCIP indexers when dirty source files exist or --full forces it
   const indexerResults: { indexer: string; result: unknown }[] = [];
+  const hasDirtySourceFiles = ctx.store.getDirtyPaths().length > 0;
 
-  if (useFull) {
+  if (useFull || hasDirtySourceFiles) {
     const projects = detectProjects(ctx.repoRoot);
     const tsIndexer = new ScipTypescriptIndexer();
     const pyIndexer = new ScipPythonIndexer();
@@ -259,15 +260,18 @@ export async function runUpdate(args: string[]): Promise<void> {
     }
   }
 
-  // Record full SCIP index timestamp if --full succeeded
-  if (useFull && indexerResults.some((r) => !("error" in (r.result as any)))) {
+  // Record full SCIP index timestamp and clear dirty set on successful SCIP run
+  const scipRan = useFull || hasDirtySourceFiles;
+  if (scipRan && indexerResults.some((r) => !("error" in (r.result as any)))) {
     ctx.store.setMeta("last_full_scip_index_ts", String(Date.now()));
+    ctx.store.clearAllDirty();
   }
 
   ctx.ledger.log("update", {
     staleCount: dirtyFiles.length,
     newCount: newFiles.length,
     full: useFull,
+    scip: scipRan,
     indexers: indexerResults.map((r) => r.indexer),
   });
 

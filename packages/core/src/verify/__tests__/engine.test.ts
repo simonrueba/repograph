@@ -85,6 +85,128 @@ describe("VerifyEngine", () => {
       expect(result.passed).toBe(false);
       expect(result.issues.some((i) => i.path === "src/new-file.ts")).toBe(true);
     });
+
+    it("should pass when only non-source files are dirty", () => {
+      queries.markDirty("README.md");
+      queries.markDirty("package.json");
+      queries.markDirty("docs/guide.txt");
+
+      const result = checkIndexFreshness(queries, repoRoot);
+      expect(result.passed).toBe(true);
+      expect(result.issues).toHaveLength(0);
+    });
+
+    it("should only report stale source files when mixed with non-source", () => {
+      queries.markDirty("README.md");
+      queries.markDirty("src/app.ts");
+
+      const result = checkIndexFreshness(queries, repoRoot);
+      expect(result.passed).toBe(false);
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0].path).toBe("src/app.ts");
+    });
+
+    // ── source extension coverage ──────────────────────────────────────
+
+    it.each([
+      ["src/index.ts"],
+      ["src/component.tsx"],
+      ["lib/utils.js"],
+      ["lib/button.jsx"],
+      ["scripts/run.py"],
+    ])("should treat %s as a source file (stale when dirty)", (filePath) => {
+      queries.markDirty(filePath);
+
+      const result = checkIndexFreshness(queries, repoRoot);
+      expect(result.passed).toBe(false);
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0].path).toBe(filePath);
+    });
+
+    it.each([
+      ["README.md"],
+      ["package.json"],
+      [".env"],
+      ["tsconfig.json"],
+      ["styles/app.css"],
+      ["index.html"],
+      ["config.yaml"],
+    ])("should treat %s as non-source (ignored when dirty)", (filePath) => {
+      queries.markDirty(filePath);
+
+      const result = checkIndexFreshness(queries, repoRoot);
+      expect(result.passed).toBe(true);
+      expect(result.issues).toHaveLength(0);
+    });
+
+    // ── tricky extension edge cases ────────────────────────────────────
+
+    it("should ignore files with no extension", () => {
+      queries.markDirty("Makefile");
+      queries.markDirty("Dockerfile");
+
+      const result = checkIndexFreshness(queries, repoRoot);
+      expect(result.passed).toBe(true);
+      expect(result.issues).toHaveLength(0);
+    });
+
+    it("should ignore files with misleading double extensions", () => {
+      queries.markDirty("src/index.ts.bak");
+      queries.markDirty("src/bundle.js.map");
+      queries.markDirty("src/types.d.ts.old");
+
+      const result = checkIndexFreshness(queries, repoRoot);
+      expect(result.passed).toBe(true);
+      expect(result.issues).toHaveLength(0);
+    });
+
+    it("should treat dotfiles with source extensions as source", () => {
+      queries.markDirty(".eslintrc.js");
+
+      const result = checkIndexFreshness(queries, repoRoot);
+      expect(result.passed).toBe(false);
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0].path).toBe(".eslintrc.js");
+    });
+
+    // ── timestamp boundary interactions with filtering ─────────────────
+
+    it("should pass when non-source files are dirty with stale SCIP timestamp", () => {
+      // SCIP timestamp is old, but only non-source files are dirty — should still pass
+      queries.setMeta("last_full_scip_index_ts", String(Date.now() - 100000));
+      queries.markDirty("README.md");
+      queries.markDirty("package.json");
+
+      const result = checkIndexFreshness(queries, repoRoot);
+      expect(result.passed).toBe(true);
+      expect(result.issues).toHaveLength(0);
+    });
+
+    it("should pass when SCIP timestamp exactly equals newest dirty timestamp", () => {
+      queries.markDirty("src/exact.ts");
+      const dirtyTs = queries.getDirtyPaths()[0].changed_at;
+      queries.setMeta("last_full_scip_index_ts", String(dirtyTs));
+
+      const result = checkIndexFreshness(queries, repoRoot);
+      expect(result.passed).toBe(true);
+      expect(result.issues).toHaveLength(0);
+    });
+
+    it("should only report source files newer than SCIP timestamp in mixed set", () => {
+      // Old SCIP timestamp
+      queries.setMeta("last_full_scip_index_ts", String(Date.now() - 50000));
+
+      // Mark a source file dirty (will be newer than SCIP ts)
+      queries.markDirty("src/stale.ts");
+      // Mark non-source files dirty (should be ignored regardless)
+      queries.markDirty("README.md");
+      queries.markDirty("package.json");
+
+      const result = checkIndexFreshness(queries, repoRoot);
+      expect(result.passed).toBe(false);
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0].path).toBe("src/stale.ts");
+    });
   });
 
   // ── missing-tests check ─────────────────────────────────────────────
@@ -218,6 +340,18 @@ describe("VerifyEngine", () => {
       expect(report.status).toBe("FAIL");
       expect(report.summary).toContain("indexFreshness");
       expect(report.summary).toContain("testCoverage");
+    });
+
+    it("should return OK when only non-source files are dirty", () => {
+      queries.upsertFile({ path: "src/app.ts", language: "typescript", hash: "abc123" });
+      queries.markDirty("README.md");
+      queries.markDirty("package.json");
+
+      const engine = new VerifyEngine(queries, ledger, repoRoot);
+      const report = engine.verify();
+
+      expect(report.status).toBe("OK");
+      expect(report.checks.indexFreshness.passed).toBe(true);
     });
 
     it("should return structured report shape", () => {

@@ -26,8 +26,12 @@ FILE_PATH="$(echo "$STDIN_JSON" | bun -e 'const j=JSON.parse(await Bun.stdin.tex
 [ -d ".repograph" ] || exit 0
 
 # Mark edited file dirty (tracks need for SCIP reindex)
+# Guard: only mark source files — non-source files (README.md, package.json, etc.)
+# can never be indexed by SCIP and cause false-positive freshness failures.
 if [ -n "$FILE_PATH" ]; then
-  $BIN dirty mark "$FILE_PATH" 2>/dev/null || true
+  case "$FILE_PATH" in
+    *.ts|*.tsx|*.js|*.jsx|*.py) $BIN dirty mark "$FILE_PATH" 2>/dev/null || true ;;
+  esac
 fi
 
 $BIN update 2>/dev/null || true
