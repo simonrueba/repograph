@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 /**
- * RepoGraph MCP Server
+ * Ariadne MCP Server
  *
- * Exposes the core RepoGraph index as read-only MCP tools that any
+ * Exposes the core Ariadne index as read-only MCP tools that any
  * MCP-compatible client (Claude Code, Cursor, etc.) can call.
  */
 
@@ -20,19 +20,19 @@ import {
   ImpactAnalyzer,
   ModuleGraph,
   type ModuleGraphResult,
-} from "repograph-core";
+} from "ariadne-core";
 
 // ── Bootstrap core services ──────────────────────────────────────────
 
-const repoRoot = process.env.REPOGRAPH_ROOT || process.cwd();
-const repographDir = join(repoRoot, ".repograph");
-const dbPath = join(repographDir, "index.db");
+const repoRoot = process.env.ARIADNE_ROOT || process.cwd();
+const ariadneDir = join(repoRoot, ".ariadne");
+const dbPath = join(ariadneDir, "index.db");
 
-// Ensure .repograph/ exists — create if missing so the MCP server
-// can start even before `repograph init` has been run.
-if (!existsSync(repographDir)) {
-  mkdirSync(repographDir, { recursive: true });
-  console.error("RepoGraph: created .repograph/ directory. Run 'repograph setup' for a full index.");
+// Ensure .ariadne/ exists — create if missing so the MCP server
+// can start even before `ariadne init` has been run.
+if (!existsSync(ariadneDir)) {
+  mkdirSync(ariadneDir, { recursive: true });
+  console.error("Ariadne: created .ariadne/ directory. Run 'ariadne setup' for a full index.");
 }
 
 const db = createDatabase(dbPath);
@@ -60,13 +60,13 @@ function toErrorMessage(e: unknown): string {
 // ── MCP Server ───────────────────────────────────────────────────────
 
 const server = new McpServer({
-  name: "repograph",
+  name: "ariadne",
   version: "0.1.0",
 });
 
 // Tool 1: search_symbol
 server.registerTool(
-  "repograph.search_symbol",
+  "ariadne.search_symbol",
   {
     title: "Search Symbols",
     description: "Search symbols by name (fuzzy LIKE match). Returns id, name, kind, file path, and range.",
@@ -87,7 +87,7 @@ server.registerTool(
 
 // Tool 2: get_def
 server.registerTool(
-  "repograph.get_def",
+  "ariadne.get_def",
   {
     title: "Get Definition",
     description: "Get a symbol's definition by ID, including documentation and a code snippet.",
@@ -107,7 +107,7 @@ server.registerTool(
 
 // Tool 3: find_refs
 server.registerTool(
-  "repograph.find_refs",
+  "ariadne.find_refs",
   {
     title: "Find References",
     description: "Find all references to a symbol. Optionally scope to files under a given path prefix.",
@@ -131,7 +131,7 @@ server.registerTool(
 
 // Tool 4: impact
 server.registerTool(
-  "repograph.impact",
+  "ariadne.impact",
   {
     title: "Impact Analysis",
     description: "Compute the impact (blast radius) of changed files: affected symbols, dependent files, and recommended tests.",
@@ -161,7 +161,7 @@ server.registerTool(
 
 // Tool 5: module_graph
 server.registerTool(
-  "repograph.module_graph",
+  "ariadne.module_graph",
   {
     title: "Module Graph",
     description: "Get the module/file dependency graph. Optionally scope to a directory subtree.",
@@ -203,7 +203,7 @@ server.registerTool(
 
 // Tool 6: symbol_graph
 server.registerTool(
-  "repograph.symbol_graph",
+  "ariadne.symbol_graph",
   {
     title: "Symbol Graph",
     description: "Get the dependency subgraph centered on a specific symbol. Returns the symbol's definition file and all files that reference it.",
@@ -240,7 +240,7 @@ server.registerTool(
 
 // Tool 7: file_symbols
 server.registerTool(
-  "repograph.file_symbols",
+  "ariadne.file_symbols",
   {
     title: "File Symbols",
     description: "List all symbols defined in a specific file.",
@@ -260,7 +260,7 @@ server.registerTool(
 
 // Tool 8: status
 server.registerTool(
-  "repograph.status",
+  "ariadne.status",
   {
     title: "Index Status",
     description: "Get the current index status: total files, total symbols, dirty count, and timestamps.",
@@ -288,7 +288,7 @@ server.registerTool(
 
 // Tool 9: call_graph
 server.registerTool(
-  "repograph.call_graph",
+  "ariadne.call_graph",
   {
     title: "Call Graph",
     description: "Get the approximate call graph for a symbol: which functions call it (callers) and which functions it calls (callees).",
@@ -311,4 +311,4 @@ server.registerTool(
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error("RepoGraph MCP Server running on stdio");
+console.error("Ariadne MCP Server running on stdio");

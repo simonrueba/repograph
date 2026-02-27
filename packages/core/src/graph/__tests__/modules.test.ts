@@ -13,7 +13,7 @@ describe("ModuleGraph", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "repograph-modules-test-"));
+    tempDir = mkdtempSync(join(tmpdir(), "ariadne-modules-test-"));
     db = createDatabase(join(tempDir, "test.db"));
     store = new StoreQueries(db);
 

@@ -1,10 +1,10 @@
-import { createDatabase, StoreQueries, Ledger } from "repograph-core";
+import { createDatabase, StoreQueries, Ledger } from "ariadne-core";
 import { existsSync } from "fs";
 import { join } from "path";
 
 export interface CliContext {
   repoRoot: string;
-  repographDir: string;
+  ariadneDir: string;
   db: ReturnType<typeof createDatabase>;
   store: StoreQueries;
   ledger: Ledger;
@@ -12,14 +12,14 @@ export interface CliContext {
 
 export function getContext(repoRoot?: string): CliContext {
   const root = repoRoot || process.cwd();
-  const repographDir = join(root, ".repograph");
-  if (!existsSync(repographDir)) {
-    throw new Error(`.repograph/ not found. Run 'repograph init' first.`);
+  const ariadneDir = join(root, ".ariadne");
+  if (!existsSync(ariadneDir)) {
+    throw new Error(`.ariadne/ not found. Run 'ariadne init' first.`);
   }
-  const db = createDatabase(join(repographDir, "index.db"));
+  const db = createDatabase(join(ariadneDir, "index.db"));
   return {
     repoRoot: root,
-    repographDir,
+    ariadneDir,
     db,
     store: new StoreQueries(db),
     ledger: new Ledger(db),

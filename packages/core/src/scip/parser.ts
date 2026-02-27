@@ -12,9 +12,9 @@ import type {
  * Extract a human-readable name from a SCIP symbol string.
  *
  * SCIP symbol format:
- *   "scip-typescript npm repograph-core 0.1.0 src/store/`db.ts`/createDatabase()."
- *   "scip-typescript npm repograph-core 0.1.0 src/store/`queries.ts`/StoreQueries#"
- *   "scip-typescript npm repograph-core 0.1.0 src/store/`queries.ts`/StoreQueries#upsertFile()."
+ *   "scip-typescript npm ariadne-core 0.1.0 src/store/`db.ts`/createDatabase()."
+ *   "scip-typescript npm ariadne-core 0.1.0 src/store/`queries.ts`/StoreQueries#"
+ *   "scip-typescript npm ariadne-core 0.1.0 src/store/`queries.ts`/StoreQueries#upsertFile()."
  *
  * Descriptors use suffixes: . (term), # (type), () (method params)
  * Backtick-quoted segments are file/namespace names, NOT symbol names.

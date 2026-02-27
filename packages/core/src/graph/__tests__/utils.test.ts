@@ -49,7 +49,7 @@ describe("getSnippet", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "repograph-utils-test-"));
+    tempDir = mkdtempSync(join(tmpdir(), "ariadne-utils-test-"));
   });
 
   afterEach(() => {

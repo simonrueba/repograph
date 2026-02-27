@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, copyFileSync, chmodSync, readdirSync, statSync } from "fs";
 import { join, resolve } from "path";
-import { createDatabase } from "repograph-core";
+import { createDatabase } from "ariadne-core";
 import { output } from "../lib/output";
 import { runIndex } from "./index-cmd";
 
@@ -8,36 +8,36 @@ import { runIndex } from "./index-cmd";
  * One-command setup for any project: init + index + generate configs.
  *
  * Usage:
- *   repograph setup [path]           # init + structural + SCIP index
- *   repograph setup [path] --quick   # init + structural imports only (skip SCIP)
+ *   ariadne setup [path]           # init + structural + SCIP index
+ *   ariadne setup [path] --quick   # init + structural imports only (skip SCIP)
  */
 export async function runSetup(args: string[]): Promise<void> {
   const quick = args.includes("--quick");
   const rootArg = args.find((a) => !a.startsWith("--"));
   const repoRoot = resolve(rootArg || process.cwd());
-  const repographDir = join(repoRoot, ".repograph");
+  const ariadneDir = join(repoRoot, ".ariadne");
 
   const steps: { step: string; status: string }[] = [];
 
   // Step 1: Init (idempotent — safe to re-run)
-  mkdirSync(repographDir, { recursive: true });
-  mkdirSync(join(repographDir, "cache", "scip"), { recursive: true });
+  mkdirSync(ariadneDir, { recursive: true });
+  mkdirSync(join(ariadneDir, "cache", "scip"), { recursive: true });
 
-  const dbPath = join(repographDir, "index.db");
+  const dbPath = join(ariadneDir, "index.db");
   const db = createDatabase(dbPath);
   db.close();
 
-  if (!existsSync(join(repographDir, "state.json"))) {
+  if (!existsSync(join(ariadneDir, "state.json"))) {
     writeFileSync(
-      join(repographDir, "state.json"),
+      join(ariadneDir, "state.json"),
       JSON.stringify({ version: 1, createdAt: new Date().toISOString(), repoRoot }, null, 2),
     );
   }
   steps.push({ step: "init", status: "ok" });
 
-  // Step 2: Add .repograph/ to .gitignore
+  // Step 2: Add .ariadne/ to .gitignore
   const gitignorePath = join(repoRoot, ".gitignore");
-  const gitignoreEntry = ".repograph/";
+  const gitignoreEntry = ".ariadne/";
   if (existsSync(gitignorePath)) {
     const content = readFileSync(gitignorePath, "utf-8");
     if (!content.includes(gitignoreEntry)) {
@@ -48,8 +48,8 @@ export async function runSetup(args: string[]): Promise<void> {
   }
   steps.push({ step: "gitignore", status: "ok" });
 
-  // Step 2b: Auto-generate repograph.boundaries.json for monorepos
-  const boundariesPath = join(repoRoot, "repograph.boundaries.json");
+  // Step 2b: Auto-generate ariadne.boundaries.json for monorepos
+  const boundariesPath = join(repoRoot, "ariadne.boundaries.json");
   if (!existsSync(boundariesPath)) {
     const packagesDir = join(repoRoot, "packages");
     if (existsSync(packagesDir)) {
@@ -81,8 +81,8 @@ export async function runSetup(args: string[]): Promise<void> {
     }
   }
 
-  // Step 3: Copy portable hook scripts into .repograph/hooks/
-  const hooksDir = join(repographDir, "hooks");
+  // Step 3: Copy portable hook scripts into .ariadne/hooks/
+  const hooksDir = join(ariadneDir, "hooks");
   mkdirSync(hooksDir, { recursive: true });
   const srcHooksDir = join(import.meta.dir, "..", "hooks");
   for (const hookFile of ["post-edit.sh", "post-test.sh", "stop-verify.sh", "pre-edit-impact.sh"]) {
@@ -132,8 +132,8 @@ export async function runSetup(args: string[]): Promise<void> {
 }
 
 /**
- * Hooks config that references portable scripts in .repograph/hooks/.
- * These scripts resolve the repograph binary dynamically at runtime.
+ * Hooks config that references portable scripts in .ariadne/hooks/.
+ * These scripts resolve the ariadne binary dynamically at runtime.
  */
 function generateHooksConfig(): object {
   return {
@@ -144,7 +144,7 @@ function generateHooksConfig(): object {
           hooks: [
             {
               type: "command",
-              command: "bash .repograph/hooks/pre-edit-impact.sh",
+              command: "bash .ariadne/hooks/pre-edit-impact.sh",
             },
           ],
         },
@@ -155,7 +155,7 @@ function generateHooksConfig(): object {
           hooks: [
             {
               type: "command",
-              command: "bash .repograph/hooks/post-edit.sh",
+              command: "bash .ariadne/hooks/post-edit.sh",
             },
           ],
         },
@@ -164,7 +164,7 @@ function generateHooksConfig(): object {
           hooks: [
             {
               type: "command",
-              command: "bash .repograph/hooks/post-test.sh",
+              command: "bash .ariadne/hooks/post-test.sh",
             },
           ],
         },
@@ -174,7 +174,7 @@ function generateHooksConfig(): object {
           hooks: [
             {
               type: "command",
-              command: "bash .repograph/hooks/stop-verify.sh",
+              command: "bash .ariadne/hooks/stop-verify.sh",
             },
           ],
         },
@@ -190,16 +190,16 @@ function generateMcpConfig(): object {
   if (!existsSync(localMcp)) {
     throw new Error(
       `Cannot find MCP server at ${localMcp}. ` +
-      `Ensure you are running setup from a repograph clone.`,
+      `Ensure you are running setup from an ariadne clone.`,
     );
   }
 
   return {
     mcpServers: {
-      repograph: {
+      ariadne: {
         command: "bun",
         args: ["run", resolve(localMcp)],
-        env: { REPOGRAPH_ROOT: "." },
+        env: { ARIADNE_ROOT: "." },
       },
     },
   };

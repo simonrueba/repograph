@@ -126,7 +126,7 @@ describe("ScipParser.ingest", () => {
   const tempDirs: string[] = [];
 
   function makeTempDb(): string {
-    const dir = mkdtempSync(join(tmpdir(), "repograph-scip-test-"));
+    const dir = mkdtempSync(join(tmpdir(), "ariadne-scip-test-"));
     tempDirs.push(dir);
     return join(dir, "test.db");
   }

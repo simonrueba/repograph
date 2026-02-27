@@ -11,7 +11,7 @@ describe("StoreQueries call edge queries", () => {
   const tempDirs: string[] = [];
 
   function makeTempDb(): string {
-    const dir = mkdtempSync(join(tmpdir(), "repograph-calls-query-test-"));
+    const dir = mkdtempSync(join(tmpdir(), "ariadne-calls-query-test-"));
     tempDirs.push(dir);
     return join(dir, "test.db");
   }

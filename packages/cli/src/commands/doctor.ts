@@ -1,7 +1,7 @@
 import { execSync } from "child_process";
 import { existsSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
-import { detectProjects } from "repograph-core";
+import { detectProjects } from "ariadne-core";
 import { output } from "../lib/output";
 
 interface DoctorCheck {
@@ -108,19 +108,19 @@ function checkTsconfigDetection(repoRoot: string): DoctorCheck {
 }
 
 function checkWritePermission(repoRoot: string): DoctorCheck {
-  const repographDir = join(repoRoot, ".repograph");
-  if (!existsSync(repographDir)) {
+  const ariadneDir = join(repoRoot, ".ariadne");
+  if (!existsSync(ariadneDir)) {
     return {
       name: "write_permission",
       status: "warn",
-      detail: "not initialized — run `repograph init` first",
+      detail: "not initialized — run `ariadne init` first",
     };
   }
-  const probe = join(repographDir, ".write-probe");
+  const probe = join(ariadneDir, ".write-probe");
   try {
     writeFileSync(probe, "");
     unlinkSync(probe);
-    return { name: "write_permission", status: "ok", detail: repographDir };
+    return { name: "write_permission", status: "ok", detail: ariadneDir };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { name: "write_permission", status: "fail", detail: msg };
@@ -128,12 +128,12 @@ function checkWritePermission(repoRoot: string): DoctorCheck {
 }
 
 function checkIndexDb(repoRoot: string): DoctorCheck {
-  const dbPath = join(repoRoot, ".repograph", "index.db");
+  const dbPath = join(repoRoot, ".ariadne", "index.db");
   if (!existsSync(dbPath)) {
     return {
       name: "index_db",
       status: "warn",
-      detail: "index.db not found — run `repograph init` then `repograph index`",
+      detail: "index.db not found — run `ariadne init` then `ariadne index`",
     };
   }
   return { name: "index_db", status: "ok", detail: dbPath };

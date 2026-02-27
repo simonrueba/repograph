@@ -1,10 +1,10 @@
 {
-  "name": "repograph-mcp",
+  "name": "ariadne-mcp",
   "version": "0.1.0",
   "type": "module",
   "main": "src/index.ts",
   "bin": {
-    "repograph-mcp": "src/index.ts"
+    "ariadne-mcp": "src/index.ts"
   },
   "scripts": {
     "start": "bun run src/index.ts",
@@ -12,7 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "repograph-core": "workspace:*",
+    "ariadne-core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.27.0",
     "zod": "^3.23.0"
   },

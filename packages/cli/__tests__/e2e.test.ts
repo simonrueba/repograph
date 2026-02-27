@@ -19,7 +19,7 @@ describe("CLI e2e", () => {
   let testDir: string;
 
   beforeAll(() => {
-    testDir = mkdtempSync(join(tmpdir(), "repograph-e2e-"));
+    testDir = mkdtempSync(join(tmpdir(), "ariadne-e2e-"));
 
     // Create a minimal TS project
     writeFileSync(
@@ -64,19 +64,19 @@ export function calculate(a: number, b: number): number {
     rmSync(testDir, { recursive: true, force: true });
   });
 
-  it("init creates .repograph/ with expected files", () => {
+  it("init creates .ariadne/ with expected files", () => {
     const output = run(`init ${testDir}`, testDir);
     const envelope = JSON.parse(output);
 
     expect(envelope.ok).toBe(true);
     expect(envelope.kind).toBe("init");
-    expect(envelope.data.repographDir).toBeDefined();
+    expect(envelope.data.ariadneDir).toBeDefined();
     expect(envelope.data.dbPath).toBeDefined();
-    expect(existsSync(join(testDir, ".repograph"))).toBe(true);
-    expect(existsSync(join(testDir, ".repograph", "index.db"))).toBe(true);
-    expect(existsSync(join(testDir, ".repograph", "state.json"))).toBe(true);
-    expect(existsSync(join(testDir, ".repograph", "hooks.json"))).toBe(true);
-    expect(existsSync(join(testDir, ".repograph", "mcp.json"))).toBe(true);
+    expect(existsSync(join(testDir, ".ariadne"))).toBe(true);
+    expect(existsSync(join(testDir, ".ariadne", "index.db"))).toBe(true);
+    expect(existsSync(join(testDir, ".ariadne", "state.json"))).toBe(true);
+    expect(existsSync(join(testDir, ".ariadne", "hooks.json"))).toBe(true);
+    expect(existsSync(join(testDir, ".ariadne", "mcp.json"))).toBe(true);
   });
 
   it("update registers files and detects stale files", () => {

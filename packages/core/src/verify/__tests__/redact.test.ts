@@ -125,8 +125,8 @@ describe("redactString", () => {
     expect(redactString(msg)).toBe(msg);
   });
 
-  it("should NOT redact repograph commands", () => {
-    const cmd = "repograph query impact src/store/queries.ts";
+  it("should NOT redact ariadne commands", () => {
+    const cmd = "ariadne query impact src/store/queries.ts";
     expect(redactString(cmd)).toBe(cmd);
   });
 });
@@ -195,13 +195,13 @@ describe("redactReport", () => {
               line: 10,
               col: 5,
               code: "TS2345",
-              suggestedQueries: ["repograph query impact src/lib.ts"],
+              suggestedQueries: ["ariadne query impact src/lib.ts"],
             },
           ],
         },
       },
       summary: "failed checks: typecheck",
-      recommendations: ["repograph query impact src/lib.ts  # 1 error"],
+      recommendations: ["ariadne query impact src/lib.ts  # 1 error"],
     };
 
     const redacted = redactReport(report);

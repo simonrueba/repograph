@@ -9,7 +9,7 @@ export async function runLedger(args: string[]): Promise<void> {
       const event = args[1];
       const jsonStr = args[2];
       if (!event || !jsonStr) {
-        outputError("MISSING_ARGUMENT", "Usage: repograph ledger log <event> '<json>'");
+        outputError("MISSING_ARGUMENT", "Usage: ariadne ledger log <event> '<json>'");
       }
 
       let data: Record<string, unknown>;

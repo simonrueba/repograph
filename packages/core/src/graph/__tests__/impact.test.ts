@@ -13,7 +13,7 @@ describe("ImpactAnalyzer", () => {
   const tempDirs: string[] = [];
 
   function makeTempDb(): string {
-    const dir = mkdtempSync(join(tmpdir(), "repograph-impact-test-"));
+    const dir = mkdtempSync(join(tmpdir(), "ariadne-impact-test-"));
     tempDirs.push(dir);
     return join(dir, "test.db");
   }

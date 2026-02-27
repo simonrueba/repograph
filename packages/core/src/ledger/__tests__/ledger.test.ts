@@ -4,7 +4,7 @@ import { Ledger } from "../ledger";
 import { rmSync, mkdirSync } from "fs";
 
 describe("Ledger", () => {
-  const testDir = "/tmp/repograph-test-ledger";
+  const testDir = "/tmp/ariadne-test-ledger";
   let ledger: Ledger;
   let db: ReturnType<typeof createDatabase>;
 

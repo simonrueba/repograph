@@ -13,7 +13,7 @@ describe("GraphQueries.getCallGraph", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "repograph-callgraph-test-"));
+    tempDir = mkdtempSync(join(tmpdir(), "ariadne-callgraph-test-"));
     const dbPath = join(tempDir, "test.db");
     db = createDatabase(dbPath);
     store = new StoreQueries(db);
