@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, copyFileSync, chmodSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, copyFileSync, chmodSync, readdirSync, statSync } from "fs";
 import { join, resolve } from "path";
 import { createDatabase } from "repograph-core";
 import { output } from "../lib/output";
@@ -47,6 +47,39 @@ export async function runSetup(args: string[]): Promise<void> {
     writeFileSync(gitignorePath, `${gitignoreEntry}\n`);
   }
   steps.push({ step: "gitignore", status: "ok" });
+
+  // Step 2b: Auto-generate repograph.boundaries.json for monorepos
+  const boundariesPath = join(repoRoot, "repograph.boundaries.json");
+  if (!existsSync(boundariesPath)) {
+    const packagesDir = join(repoRoot, "packages");
+    if (existsSync(packagesDir)) {
+      try {
+        const pkgs = readdirSync(packagesDir).filter((name) => {
+          try {
+            return statSync(join(packagesDir, name)).isDirectory();
+          } catch {
+            return false;
+          }
+        });
+        if (pkgs.length > 0) {
+          const layers: Record<string, { path: string; canImport: string[] }> = {};
+          for (const pkg of pkgs) {
+            layers[pkg] = {
+              path: `packages/${pkg}/`,
+              canImport: pkgs.filter((p) => p !== pkg),
+            };
+          }
+          writeFileSync(
+            boundariesPath,
+            JSON.stringify({ layers }, null, 2) + "\n",
+          );
+          steps.push({ step: "boundaries_config", status: "created" });
+        }
+      } catch {
+        // Ignore errors during boundary config generation
+      }
+    }
+  }
 
   // Step 3: Copy portable hook scripts into .repograph/hooks/
   const hooksDir = join(repographDir, "hooks");

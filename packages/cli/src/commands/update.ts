@@ -7,12 +7,17 @@ import {
   ScipPythonIndexer,
   ScipParser,
   detectProjects,
+  extractArtifacts,
+  scanConfigRefs,
+  type ArtifactSymbol,
 } from "repograph-core";
 import { getContext } from "../lib/context";
 import { output } from "../lib/output";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".py"]);
 const SKIP_DIRS = new Set(["node_modules", "dist", ".repograph", ".git"]);
+const ARTIFACT_GLOBS = new Set([".env", "package.json", "tsconfig.json"]);
+const ARTIFACT_EXTENSIONS = new Set([".sql", ".yaml", ".yml"]);
 
 function languageFromExt(ext: string): string {
   if ([".ts", ".tsx"].includes(ext)) return "typescript";
@@ -109,6 +114,47 @@ function processTargetedFiles(
     const hash = hashContent(content);
     const relPath = relative(repoRoot, fullPath);
     results.push({ path: relPath, fullPath, ext, hash });
+  }
+  return results;
+}
+
+function isArtifactFile(name: string): boolean {
+  if (ARTIFACT_GLOBS.has(name)) return true;
+  if (name.startsWith(".env")) return true;
+  const ext = extname(name);
+  if (ARTIFACT_EXTENSIONS.has(ext)) return true;
+  // Check for openapi files
+  if (name.startsWith("openapi.")) return true;
+  return false;
+}
+
+function walkArtifactFiles(
+  dir: string,
+  repoRoot: string,
+): { path: string; fullPath: string }[] {
+  const results: { path: string; fullPath: string }[] = [];
+  let entries: string[];
+  try {
+    entries = readdirSync(dir) as string[];
+  } catch {
+    return results;
+  }
+
+  for (const name of entries) {
+    const fullPath = join(dir, name);
+    let stat;
+    try {
+      stat = statSync(fullPath);
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory()) {
+      if (!SKIP_DIRS.has(name) && !name.startsWith(".")) {
+        results.push(...walkArtifactFiles(fullPath, repoRoot));
+      }
+    } else if (stat.isFile() && isArtifactFile(name)) {
+      results.push({ path: relative(repoRoot, fullPath), fullPath });
+    }
   }
   return results;
 }
@@ -322,6 +368,47 @@ export async function runUpdate(args: string[]): Promise<void> {
   if (scipRan && indexerResults.some((r) => !("error" in (r.result as any)))) {
     ctx.store.setMeta("last_full_scip_index_ts", String(Date.now()));
     ctx.store.clearAllDirty();
+  }
+
+  // ── Artifact indexing ────────────────────────────────────────────────
+  const artifactFiles = walkArtifactFiles(ctx.repoRoot, ctx.repoRoot);
+  const allArtifactSymbols: ArtifactSymbol[] = [];
+
+  for (const af of artifactFiles) {
+    try {
+      const content = readFileSync(af.fullPath, "utf-8");
+      const symbols = extractArtifacts(af.path, content);
+      for (const sym of symbols) {
+        ctx.store.upsertSymbol({
+          id: sym.id,
+          kind: sym.kind,
+          name: sym.name,
+          file_path: sym.filePath,
+          range_start: (sym.line << 16) | 0,
+          range_end: (sym.line << 16) | 0,
+        });
+        allArtifactSymbols.push(sym);
+      }
+    } catch {
+      // Skip unreadable files
+    }
+  }
+
+  // Scan dirty source files for config references
+  if (allArtifactSymbols.length > 0) {
+    const filesToScan = [...dirtyFiles, ...newFiles];
+    for (const file of filesToScan) {
+      try {
+        const code = readFileSync(file.fullPath, "utf-8");
+        const language = languageFromExt(file.ext);
+        const refEdges = scanConfigRefs(code, file.path, language, allArtifactSymbols);
+        for (const edge of refEdges) {
+          ctx.store.insertEdge(edge);
+        }
+      } catch {
+        // Skip unreadable files
+      }
+    }
   }
 
   ctx.ledger.log("update", {

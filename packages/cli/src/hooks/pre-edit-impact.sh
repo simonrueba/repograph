@@ -52,7 +52,7 @@ case "$REL_PATH" in
 esac
 
 # Run impact analysis (--json for machine-readable output)
-IMPACT_JSON="$($BIN query impact "$REL_PATH" --json 2>/dev/null || true)"
+IMPACT_JSON="$($BIN query impact "$REL_PATH" --details --json 2>/dev/null || true)"
 
 # Guard: if impact failed or returned empty, silently allow
 [ -n "$IMPACT_JSON" ] || exit 0
@@ -88,6 +88,26 @@ try {
 
   if (tests.length > 0) {
     lines.push("  Recommended tests: " + tests.map(t => t.command).join(", "));
+  }
+
+  const symbolDetails = r.symbolDetails || [];
+  if (symbolDetails.length > 0) {
+    const detailLines = symbolDetails.slice(0, 5).map(s => {
+      const kind = s.kind ? ` (${s.kind})` : "";
+      const doc = s.doc ? " — " + s.doc.split("\n").slice(0, 2).join(" ") : "";
+      return `    ${s.name}${kind}${doc}`;
+    });
+    lines.push("  Symbol details:");
+    lines.push(...detailLines);
+  }
+
+  const keyRefs = r.keyRefs || [];
+  if (keyRefs.length > 0) {
+    const refLines = keyRefs.slice(0, 5).map(kr =>
+      `    ${kr.symbolName} in ${kr.filePath}` + (kr.snippet ? `: ${kr.snippet.split("\n")[0]}` : "")
+    );
+    lines.push("  Key references:");
+    lines.push(...refLines);
   }
 
   const context = lines.join("\n");

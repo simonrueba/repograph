@@ -156,13 +156,14 @@ export function greet(name: string): string {
 
   // ── Tool listing ──────────────────────────────────────────────────
 
-  it("should list all 8 tools", async () => {
+  it("should list all 9 tools", async () => {
     const response = await sendRequest(serverProc, "tools/list");
     const tools = response.result.tools;
 
-    expect(tools).toHaveLength(8);
+    expect(tools).toHaveLength(9);
     const names = tools.map((t: any) => t.name).sort();
     expect(names).toEqual([
+      "repograph.call_graph",
       "repograph.file_symbols",
       "repograph.find_refs",
       "repograph.get_def",

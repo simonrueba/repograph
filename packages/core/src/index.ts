@@ -24,15 +24,17 @@ export type { ScipRange } from "./scip/types";
 
 // ── Graph ────────────────────────────────────────────────────────────────
 export { GraphQueries } from "./graph/refs";
-export type { SymbolResult, DefResult, RefResult } from "./graph/refs";
+export type { SymbolResult, DefResult, RefResult, CallGraphResult } from "./graph/refs";
 export { ImpactAnalyzer } from "./graph/impact";
-export type { ImpactResult } from "./graph/impact";
+export type { ImpactResult, DetailedImpactResult, SymbolDetail, KeyRef } from "./graph/impact";
 export { ModuleGraph } from "./graph/modules";
 export type { ModuleGraphResult, GraphMode } from "./graph/modules";
 
 // ── Verify ───────────────────────────────────────────────────────────────
 export { VerifyEngine } from "./verify/engine";
 export type { VerifyReport } from "./verify/engine";
+export { checkBoundaries } from "./verify/checks/boundaries";
+export type { BoundaryConfig, BoundaryIssue, BoundaryCheckResult } from "./verify/checks/boundaries";
 export { redactReport, redactString } from "./verify/redact";
 
 // ── Indexers ─────────────────────────────────────────────────────────────
@@ -43,3 +45,9 @@ export { ScipPythonIndexer } from "./indexers/scip-python";
 export type { Indexer, IndexResult } from "./indexers/types";
 export { detectProjects } from "./indexers/project-detector";
 export type { DetectedProject } from "./indexers/project-detector";
+
+// ── Indexers: Artifacts ─────────────────────────────────────────────────
+export { extractArtifacts } from "./indexers/artifact-extractor";
+export type { ArtifactSymbol } from "./indexers/artifact-extractor";
+export { scanConfigRefs } from "./indexers/config-ref-scanner";
+export type { ConfigRefEdge } from "./indexers/config-ref-scanner";

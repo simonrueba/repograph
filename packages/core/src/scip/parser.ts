@@ -290,6 +290,45 @@ export class ScipParser {
         }
       }
 
+      // ── Derive approximate call edges ───────────────────────────────
+      // Build sorted definition ranges from this document's occurrences
+      const defRanges: { symbolId: string; start: number; end: number }[] = [];
+      for (const occ of pendingOccurrences) {
+        if (occ.roles & SymbolRole.Definition) {
+          defRanges.push({ symbolId: occ.symbol_id, start: occ.range_start, end: occ.range_end });
+        }
+      }
+      defRanges.sort((a, b) => a.start - b.start);
+
+      // For each reference, find its enclosing definition and emit a "calls" edge
+      const callEdgeKeys = new Set<string>();
+      for (const occ of pendingOccurrences) {
+        if (occ.roles & SymbolRole.Definition) continue;
+
+        // Find innermost enclosing definition
+        let enclosing: { symbolId: string; start: number } | null = null;
+        for (const def of defRanges) {
+          if (def.start <= occ.range_start && occ.range_end <= def.end) {
+            if (!enclosing || def.start > enclosing.start) {
+              enclosing = def;
+            }
+          }
+        }
+
+        if (enclosing && enclosing.symbolId !== occ.symbol_id) {
+          const key = `${enclosing.symbolId}|${occ.symbol_id}`;
+          if (!callEdgeKeys.has(key)) {
+            callEdgeKeys.add(key);
+            pendingEdges.push({
+              source: enclosing.symbolId,
+              target: occ.symbol_id,
+              kind: "calls",
+              confidence: "approximate",
+            });
+          }
+        }
+      }
+
       // Flush all batched operations for this document
       store.upsertOccurrences(pendingOccurrences);
       store.upsertSymbols(defSymbolUpdates);
