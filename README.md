@@ -1,4 +1,4 @@
-# RepoGraph
+# Ariadne
 
 Semantic code index and gatekeeper for AI coding agents. Builds a compiler-grade symbol graph (defs/refs) via [SCIP](https://sourcegraph.com/docs/code-intelligence/scip) and a file-level dependency graph via import extraction. Exposes queries via CLI and MCP tools.
 
@@ -18,8 +18,8 @@ No LLMs involved — just static analysis.
 ### Use on any project (recommended)
 
 ```bash
-# Clone repograph
-git clone <repo-url> repograph && cd repograph
+# Clone ariadne
+git clone <repo-url> ariadne && cd ariadne
 bun install
 
 # Set up on your project — does everything in one step:
@@ -28,17 +28,17 @@ bun run packages/cli/src/index.ts setup /path/to/your/project
 ```
 
 This creates:
-- `.repograph/` — SQLite database, hook scripts, SCIP cache
+- `.ariadne/` — SQLite database, hook scripts, SCIP cache
 - `.claude/settings.json` — Claude Code hooks (impact context on edit, auto-update, verify gate)
 - `.mcp.json` — MCP server config (9 read-only tools)
-- `repograph.boundaries.json` — auto-generated architecture boundary config (monorepos)
+- `ariadne.boundaries.json` — auto-generated architecture boundary config (monorepos)
 
 Then restart Claude Code in your project to pick up the hooks and MCP server.
 
 ### Manual setup (step by step)
 
 ```bash
-# Initialize .repograph/ directory
+# Initialize .ariadne/ directory
 bun run packages/cli/src/index.ts init /path/to/your/project
 
 # Build the full index (structural imports + SCIP symbols)
@@ -90,7 +90,7 @@ All commands output JSON. Symbol IDs are SCIP symbol strings returned by `search
 | Command | Description |
 |---------|-------------|
 | `setup [path] [--quick]` | One-command setup: init + index + generate hooks & MCP config. `--quick` skips SCIP. |
-| `init [path]` | Create `.repograph/` directory and SQLite database |
+| `init [path]` | Create `.ariadne/` directory and SQLite database |
 | `index [path] [--structural-only]` | Full index: structural imports + SCIP analysis. `--structural-only` skips SCIP. |
 | `update [--full] [--files path...]` | Incremental update: structural imports + auto SCIP when dirty source files exist. `--files` processes only the specified files (used by hooks for fast single-file updates). `--full` forces SCIP even when clean. |
 | `query search <query>` | Fuzzy search symbols by name |
@@ -111,58 +111,58 @@ The MCP server exposes 9 read-only tools for AI agents:
 
 | Tool | Description |
 |------|-------------|
-| `repograph.search_symbol` | Fuzzy search symbols by name |
-| `repograph.get_def` | Get symbol definition with docs and code snippet |
-| `repograph.find_refs` | Find all references to a symbol (optionally scoped) |
-| `repograph.impact` | Blast radius analysis for changed files (with optional `details` for symbol defs and key refs) |
-| `repograph.module_graph` | File dependency graph (imports/semantic/hybrid, json/dot/mermaid) |
-| `repograph.symbol_graph` | Dependency subgraph centered on a specific symbol |
-| `repograph.file_symbols` | List all symbols defined in a file |
-| `repograph.status` | Index stats: files, symbols, dirty count, timestamps |
-| `repograph.call_graph` | Approximate call graph: callers and callees for a symbol |
+| `ariadne.search_symbol` | Fuzzy search symbols by name |
+| `ariadne.get_def` | Get symbol definition with docs and code snippet |
+| `ariadne.find_refs` | Find all references to a symbol (optionally scoped) |
+| `ariadne.impact` | Blast radius analysis for changed files (with optional `details` for symbol defs and key refs) |
+| `ariadne.module_graph` | File dependency graph (imports/semantic/hybrid, json/dot/mermaid) |
+| `ariadne.symbol_graph` | Dependency subgraph centered on a specific symbol |
+| `ariadne.file_symbols` | List all symbols defined in a file |
+| `ariadne.status` | Index stats: files, symbols, dirty count, timestamps |
+| `ariadne.call_graph` | Approximate call graph: callers and callees for a symbol |
 
 ### Configuration
 
-`repograph setup` generates this automatically. To configure manually, add `.mcp.json` to your project root:
+`ariadne setup` generates this automatically. To configure manually, add `.mcp.json` to your project root:
 
 ```json
 {
   "mcpServers": {
-    "repograph": {
+    "ariadne": {
       "command": "bun",
-      "args": ["run", "/path/to/repograph/packages/mcp/src/index.ts"],
-      "env": { "REPOGRAPH_ROOT": "." }
+      "args": ["run", "/path/to/ariadne/packages/mcp/src/index.ts"],
+      "env": { "ARIADNE_ROOT": "." }
     }
   }
 }
 ```
 
-The MCP server starts gracefully even if `.repograph/` doesn't exist yet — it creates the directory and logs a helpful message.
+The MCP server starts gracefully even if `.ariadne/` doesn't exist yet — it creates the directory and logs a helpful message.
 
 ## Claude Code hooks
 
-`repograph setup` generates `.claude/settings.json` automatically. The hooks reference portable scripts in `.repograph/hooks/` that resolve the `repograph` binary dynamically at runtime.
+`ariadne setup` generates `.claude/settings.json` automatically. The hooks reference portable scripts in `.ariadne/hooks/` that resolve the `ariadne` binary dynamically at runtime.
 
 ### What the hooks do
 
-- **Pre-edit impact hook** (`Edit|Write` PreToolUse): runs `repograph impact` before every source file edit and injects the blast radius (changed symbols, dependent files, recommended tests) as context so Claude sees what will be affected. Silently skips test files, non-source files, and uninitialized projects. ~240ms latency.
-- **Post-edit hook** (`Edit|Write` PostToolUse): marks edited source files (`.ts/.tsx/.js/.jsx/.py`) dirty, runs `repograph update --files <path>` for fast single-file updates (no full repo walk), logs the edit to the ledger. Non-source files (README, config, etc.) are skipped to avoid false-positive freshness failures.
+- **Pre-edit impact hook** (`Edit|Write` PreToolUse): runs `ariadne impact` before every source file edit and injects the blast radius (changed symbols, dependent files, recommended tests) as context so Claude sees what will be affected. Silently skips test files, non-source files, and uninitialized projects. ~240ms latency.
+- **Post-edit hook** (`Edit|Write` PostToolUse): marks edited source files (`.ts/.tsx/.js/.jsx/.py`) dirty, runs `ariadne update --files <path>` for fast single-file updates (no full repo walk), logs the edit to the ledger. Non-source files (README, config, etc.) are skipped to avoid false-positive freshness failures.
 - **Post-test hook** (`Bash` PostToolUse): detects test runner commands (vitest, jest, pytest, bun test, mocha, ava, cargo test, go test, playwright), logs `test_run` to the ledger
-- **Stop hook**: runs `repograph update` (auto-triggers SCIP when dirty source files exist), then `repograph verify`. On failure, outputs `{"decision":"block","reason":"..."}` to prevent Claude from stopping until issues are fixed
+- **Stop hook**: runs `ariadne update` (auto-triggers SCIP when dirty source files exist), then `ariadne verify`. On failure, outputs `{"decision":"block","reason":"..."}` to prevent Claude from stopping until issues are fixed
 
 The stop hook uses atomic `mkdir`-based locking to prevent concurrent runs, checks `stop_hook_active` from stdin to prevent infinite loops, and has a 120s stale lock timeout.
 
-All hooks guard against missing `.repograph/` — they silently exit if the project hasn't been initialized.
+All hooks guard against missing `.ariadne/` — they silently exit if the project hasn't been initialized.
 
 ## Gatekeeper checks
 
-`repograph verify` runs these checks:
+`ariadne verify` runs these checks:
 
 1. **Empty index** — fails if zero files are indexed (prevents vacuous pass on uninitialized projects)
 2. **Index freshness** — checks the dirty set (files marked changed by hooks or `update`), filtering to source files only. Fails if any dirty source files exist that haven't been covered by a SCIP index pass. Non-source files are ignored since SCIP can't index them.
 3. **Missing test runs** — checks the ledger for a `test_run` event after the most recent `edit`. Fails if no tests were run after editing.
-4. **Typecheck** — runs `tsc --noEmit` against the repo's `tsconfig.json`. Fails on any type errors. On failure, includes recommendations with `repograph query impact` and `repograph query search` commands for the affected files and identifiers. Skipped if no `tsconfig.json` exists.
-5. **Architecture boundaries** — reads `repograph.boundaries.json` and checks all `imports` edges against layer allowlists. Fails if any file imports from a layer not in its `canImport` list. Skipped if no config file exists.
+4. **Typecheck** — runs `tsc --noEmit` against the repo's `tsconfig.json`. Fails on any type errors. On failure, includes recommendations with `ariadne query impact` and `ariadne query search` commands for the affected files and identifiers. Skipped if no `tsconfig.json` exists.
+5. **Architecture boundaries** — reads `ariadne.boundaries.json` and checks all `imports` edges against layer allowlists. Fails if any file imports from a layer not in its `canImport` list. Skipped if no config file exists.
 
 ## How indexing works
 
@@ -172,11 +172,11 @@ Three-pass pipeline:
 2. **SCIP pass** (slower, full project) — runs `scip-typescript` or `scip-python` per detected sub-project, producing a protobuf index. The parser decodes it and extracts symbols, occurrences (with line:col ranges), and definition/reference roles. Creates symbol-level `defines`, `references`, and approximate `calls` edges (via enclosing-definition heuristic). Runs on `index`, `update` (when dirty source files exist), and `update --full` (forced).
 3. **Artifact pass** (instant, per-file) — extracts pseudo-symbols from non-code files: `.env` vars (`env_var`), `package.json`/`tsconfig.json` keys (`config_key`), SQL migrations (`table`, `index`), and OpenAPI specs (`api_endpoint`, `api_schema`). Scans dirty source files for references (`process.env.KEY`, `os.environ`, SQL table names) and creates `config_ref` edges. Runs on every `update`.
 
-All passes write to the same SQLite database (`.repograph/index.db`). The database uses WAL mode, `busy_timeout=5000` for concurrent access from hooks, and transactions for atomic SCIP ingestion. Bulk ingestion uses index-drop/recreate and `PRAGMA synchronous=OFF` for faster writes, and skips unchanged files by content hash comparison.
+All passes write to the same SQLite database (`.ariadne/index.db`). The database uses WAL mode, `busy_timeout=5000` for concurrent access from hooks, and transactions for atomic SCIP ingestion. Bulk ingestion uses index-drop/recreate and `PRAGMA synchronous=OFF` for faster writes, and skips unchanged files by content hash comparison.
 
 ### Multi-project support
 
-RepoGraph auto-detects sub-projects in monorepos by scanning for `tsconfig.json` and Python project files. Each sub-project is indexed independently with correct path prefixing so that SCIP-relative paths map correctly to repo-root-relative file paths.
+Ariadne auto-detects sub-projects in monorepos by scanning for `tsconfig.json` and Python project files. Each sub-project is indexed independently with correct path prefixing so that SCIP-relative paths map correctly to repo-root-relative file paths.
 
 ### Module graph modes
 
@@ -192,7 +192,7 @@ Output formats: `json` (default), `dot` (Graphviz), `mermaid`.
 
 ```
 packages/
-  core/     repograph-core library (360+ tests)
+  core/     ariadne-core library (360+ tests)
     src/
       store/       SQLite schema, queries, transactions
       scip/        protobuf parser + SCIP types + call graph derivation

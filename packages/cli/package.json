@@ -1,17 +1,17 @@
 {
-  "name": "repograph-cli",
+  "name": "ariadne-cli",
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "repograph": "src/index.ts"
+    "ariadne": "src/index.ts"
   },
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target bun",
-    "compile": "bun build src/index.ts --compile --outfile dist/repograph",
+    "compile": "bun build src/index.ts --compile --outfile dist/ariadne",
     "test": "vitest run"
   },
   "dependencies": {
-    "repograph-core": "workspace:*"
+    "ariadne-core": "workspace:*"
   },
   "devDependencies": {
     "bun-types": "latest"

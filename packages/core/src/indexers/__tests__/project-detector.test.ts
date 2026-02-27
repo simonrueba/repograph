@@ -13,7 +13,7 @@ const tempDirs: string[] = [];
  * cleanup, and return its absolute path.
  */
 function makeTempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "repograph-detect-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "ariadne-detect-test-"));
   tempDirs.push(dir);
   return dir;
 }

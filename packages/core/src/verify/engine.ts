@@ -2,7 +2,7 @@ import type { StoreQueries } from "../store/queries";
 import type { Ledger } from "../ledger/ledger";
 import { checkIndexFreshness } from "./checks/index-freshness";
 import { checkMissingTests } from "./checks/missing-tests";
-import { checkTypecheck, type TypecheckIssue } from "./checks/typecheck";
+import { checkTypecheck, checkTypecheckAsync, type TypecheckIssue } from "./checks/typecheck";
 import { checkBoundaries } from "./checks/boundaries";
 
 export interface VerifyReport {
@@ -16,7 +16,7 @@ export interface VerifyReport {
   };
   summary: string;
   /**
-   * High-level repograph query recommendations, populated when typecheck
+   * High-level ariadne query recommendations, populated when typecheck
    * fails. Lists the top files by error count and useful follow-up commands.
    */
   recommendations?: string[];
@@ -53,7 +53,7 @@ function buildTypecheckRecommendations(issues: TypecheckIssue[]): string[] {
   for (const file of topFiles) {
     const count = errorsByFile.get(file)!;
     recommendations.push(
-      `repograph query impact ${file}  # ${count} error${count === 1 ? "" : "s"}`,
+      `ariadne query impact ${file}  # ${count} error${count === 1 ? "" : "s"}`,
     );
   }
 
@@ -73,7 +73,7 @@ function buildTypecheckRecommendations(issues: TypecheckIssue[]): string[] {
   // ── 4. General guidance note ─────────────────────────────────────────
   if (topFiles.length > 0) {
     recommendations.push(
-      `Run \`repograph query impact <file>\` to see the blast radius of any file above`,
+      `Run \`ariadne query impact <file>\` to see the blast radius of any file above`,
     );
   }
 
@@ -87,7 +87,7 @@ export class VerifyEngine {
     private repoRoot: string,
   ) {}
 
-  verify(): VerifyReport {
+  async verify(): Promise<VerifyReport> {
     // Guard: detect empty index to prevent vacuous pass
     const allFiles = this.store.getAllFiles();
     if (allFiles.length === 0) {
@@ -97,7 +97,7 @@ export class VerifyEngine {
         checks: {
           indexFreshness: {
             passed: false,
-            issues: [{ type: "INDEX_EMPTY", path: "", reason: "no files indexed — run 'repograph index' or 'repograph setup'" }],
+            issues: [{ type: "INDEX_EMPTY", path: "", reason: "no files indexed — run 'ariadne index' or 'ariadne setup'" }],
           },
           testCoverage: { passed: true, issues: [] },
           typecheck: { passed: true, issues: [] },
@@ -106,10 +106,14 @@ export class VerifyEngine {
       };
     }
 
-    const indexFreshness = checkIndexFreshness(this.store, this.repoRoot);
-    const testCoverage = checkMissingTests(this.ledger);
-    const typecheck = checkTypecheck(this.repoRoot);
-    const boundaries = checkBoundaries(this.store, this.repoRoot);
+    // Run fast synchronous checks in parallel with the slow async typecheck.
+    // Total time ≈ max(typecheck, other_checks) instead of sum.
+    const [indexFreshness, testCoverage, boundaries, typecheck] = await Promise.all([
+      Promise.resolve(checkIndexFreshness(this.store, this.repoRoot)),
+      Promise.resolve(checkMissingTests(this.ledger)),
+      Promise.resolve(checkBoundaries(this.store, this.repoRoot)),
+      checkTypecheckAsync(this.repoRoot),
+    ]);
 
     const allPassed =
       indexFreshness.passed && testCoverage.passed && typecheck.passed && boundaries.passed;
@@ -147,7 +151,7 @@ export class VerifyEngine {
     if (allFiles.length > 0 && symbolCount === 0) {
       if (!report.recommendations) report.recommendations = [];
       report.recommendations.push(
-        `Warning: ${allFiles.length} files indexed but 0 symbols — SCIP indexing likely failed or was skipped. Run 'repograph doctor' to check prerequisites.`,
+        `Warning: ${allFiles.length} files indexed but 0 symbols — SCIP indexing likely failed or was skipped. Run 'ariadne doctor' to check prerequisites.`,
       );
     }
 

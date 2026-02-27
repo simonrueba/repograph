@@ -10,12 +10,12 @@ import {
   extractArtifacts,
   scanConfigRefs,
   type ArtifactSymbol,
-} from "repograph-core";
+} from "ariadne-core";
 import { getContext } from "../lib/context";
 import { output } from "../lib/output";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".py"]);
-const SKIP_DIRS = new Set(["node_modules", "dist", ".repograph", ".git"]);
+const SKIP_DIRS = new Set(["node_modules", "dist", ".ariadne", ".git"]);
 const ARTIFACT_GLOBS = new Set([".env", "package.json", "tsconfig.json"]);
 const ARTIFACT_EXTENSIONS = new Set([".sql", ".yaml", ".yml"]);
 
@@ -32,11 +32,17 @@ function hashContent(content: Buffer): string {
   return hasher.digest("hex");
 }
 
-function walkSourceFiles(
-  dir: string,
-  repoRoot: string,
-): { path: string; fullPath: string; ext: string; hash: string }[] {
-  const results: { path: string; fullPath: string; ext: string; hash: string }[] = [];
+interface WalkedFile {
+  path: string;
+  fullPath: string;
+  ext: string;
+  hash: string;
+  /** Cached UTF-8 content from hash read — avoids re-reading for import extraction. */
+  content?: string;
+}
+
+function walkSourceFiles(dir: string, repoRoot: string): WalkedFile[] {
+  const results: WalkedFile[] = [];
   let entries: string[];
   try {
     entries = readdirSync(dir) as string[];
@@ -59,9 +65,10 @@ function walkSourceFiles(
     } else if (stat.isFile()) {
       const ext = extname(name);
       if (SOURCE_EXTENSIONS.has(ext)) {
-        const content = readFileSync(fullPath);
-        const hash = hashContent(content);
-        results.push({ path: relative(repoRoot, fullPath), fullPath, ext, hash });
+        const raw = readFileSync(fullPath);
+        const hash = hashContent(raw);
+        // Cache content as UTF-8 string to avoid re-reading for import extraction
+        results.push({ path: relative(repoRoot, fullPath), fullPath, ext, hash, content: raw.toString("utf-8") });
       }
     }
   }
@@ -100,20 +107,17 @@ function parseFilesFlag(args: string[]): string[] | null {
  * Targeted update: process only the specified files instead of walking the
  * entire repo tree. Used by the post-edit hook for fast single-file updates.
  */
-function processTargetedFiles(
-  filePaths: string[],
-  repoRoot: string,
-): { path: string; fullPath: string; ext: string; hash: string }[] {
-  const results: { path: string; fullPath: string; ext: string; hash: string }[] = [];
+function processTargetedFiles(filePaths: string[], repoRoot: string): WalkedFile[] {
+  const results: WalkedFile[] = [];
   for (const filePath of filePaths) {
     const fullPath = filePath.startsWith("/") ? filePath : join(repoRoot, filePath);
     if (!existsSync(fullPath)) continue;
     const ext = extname(fullPath);
     if (!SOURCE_EXTENSIONS.has(ext)) continue;
-    const content = readFileSync(fullPath);
-    const hash = hashContent(content);
+    const raw = readFileSync(fullPath);
+    const hash = hashContent(raw);
     const relPath = relative(repoRoot, fullPath);
-    results.push({ path: relPath, fullPath, ext, hash });
+    results.push({ path: relPath, fullPath, ext, hash, content: raw.toString("utf-8") });
   }
   return results;
 }
@@ -191,23 +195,22 @@ export async function runUpdate(args: string[]): Promise<void> {
     ctx.store.markDirty(file.path);
   }
 
-  // Update structural imports for dirty files
+  // Update structural imports for dirty files (batch inserts for performance)
   for (const file of dirtyFiles) {
     const language = languageFromExt(file.ext);
     ctx.store.upsertFile({ path: file.path, language, hash: file.hash });
 
-    const code = readFileSync(file.fullPath, "utf-8");
+    // Use cached content from walkSourceFiles/processTargetedFiles to avoid re-reading
+    const code = file.content ?? readFileSync(file.fullPath, "utf-8");
     const imports = extractImports(code, language);
     ctx.store.clearEdgesForFile(file.path);
-    for (const imp of imports) {
-      const target = resolveModulePath(imp.specifier, file.path, language, knownFiles);
-      ctx.store.insertEdge({
-        source: file.path,
-        target,
-        kind: "imports",
-        confidence: "structural",
-      });
-    }
+    const edges = imports.map((imp) => ({
+      source: file.path,
+      target: resolveModulePath(imp.specifier, file.path, language, knownFiles),
+      kind: "imports" as const,
+      confidence: "structural" as const,
+    }));
+    ctx.store.insertEdges(edges);
   }
 
   // Also register any completely new files (only relevant for full scan)
@@ -219,18 +222,17 @@ export async function runUpdate(args: string[]): Promise<void> {
     ctx.store.upsertFile({ path: file.path, language, hash: file.hash });
     ctx.store.markDirty(file.path);
 
-    const code = readFileSync(file.fullPath, "utf-8");
+    // Use cached content from walkSourceFiles/processTargetedFiles to avoid re-reading
+    const code = file.content ?? readFileSync(file.fullPath, "utf-8");
     const imports = extractImports(code, language);
     ctx.store.clearEdgesForFile(file.path);
-    for (const imp of imports) {
-      const target = resolveModulePath(imp.specifier, file.path, language, knownFiles);
-      ctx.store.insertEdge({
-        source: file.path,
-        target,
-        kind: "imports",
-        confidence: "structural",
-      });
-    }
+    const edges = imports.map((imp) => ({
+      source: file.path,
+      target: resolveModulePath(imp.specifier, file.path, language, knownFiles),
+      kind: "imports" as const,
+      confidence: "structural" as const,
+    }));
+    ctx.store.insertEdges(edges);
   }
 
   // Record structural index timestamp
@@ -240,7 +242,11 @@ export async function runUpdate(args: string[]): Promise<void> {
   const indexerResults: { indexer: string; result: unknown }[] = [];
   const succeededProjectIds = new Set<string>();
   const hasDirtySourceFiles = ctx.store.getDirtyPaths().length > 0;
-  const projects = detectProjects(ctx.repoRoot);
+
+  // Only detect projects when SCIP indexing will actually run.
+  // For targeted single-file updates with no dirty source files,
+  // this avoids a full repo walk (~20-50ms savings per hook invocation).
+  const projects = (useFull || hasDirtySourceFiles) ? detectProjects(ctx.repoRoot) : [];
 
   if (useFull || hasDirtySourceFiles) {
     const tsIndexer = new ScipTypescriptIndexer();

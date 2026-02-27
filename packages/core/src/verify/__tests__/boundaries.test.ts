@@ -13,7 +13,7 @@ describe("checkBoundaries", () => {
   const tempDirs: string[] = [];
 
   function makeTempDir(): string {
-    const dir = mkdtempSync(join(tmpdir(), "repograph-boundaries-test-"));
+    const dir = mkdtempSync(join(tmpdir(), "ariadne-boundaries-test-"));
     tempDirs.push(dir);
     return dir;
   }
@@ -40,7 +40,7 @@ describe("checkBoundaries", () => {
 
   it("should pass when all imports respect boundaries", () => {
     // Config: cli can import core
-    writeFileSync(join(tempDir, "repograph.boundaries.json"), JSON.stringify({
+    writeFileSync(join(tempDir, "ariadne.boundaries.json"), JSON.stringify({
       layers: {
         core: { path: "packages/core/", canImport: [] },
         cli: { path: "packages/cli/", canImport: ["core"] },
@@ -56,7 +56,7 @@ describe("checkBoundaries", () => {
   });
 
   it("should detect boundary violations", () => {
-    writeFileSync(join(tempDir, "repograph.boundaries.json"), JSON.stringify({
+    writeFileSync(join(tempDir, "ariadne.boundaries.json"), JSON.stringify({
       layers: {
         core: { path: "packages/core/", canImport: [] },
         cli: { path: "packages/cli/", canImport: ["core"] },
@@ -77,7 +77,7 @@ describe("checkBoundaries", () => {
   });
 
   it("should allow same-layer imports", () => {
-    writeFileSync(join(tempDir, "repograph.boundaries.json"), JSON.stringify({
+    writeFileSync(join(tempDir, "ariadne.boundaries.json"), JSON.stringify({
       layers: {
         core: { path: "packages/core/", canImport: [] },
       }
@@ -92,7 +92,7 @@ describe("checkBoundaries", () => {
   });
 
   it("should ignore non-imports edges", () => {
-    writeFileSync(join(tempDir, "repograph.boundaries.json"), JSON.stringify({
+    writeFileSync(join(tempDir, "ariadne.boundaries.json"), JSON.stringify({
       layers: {
         core: { path: "packages/core/", canImport: [] },
         cli: { path: "packages/cli/", canImport: [] },

@@ -18,15 +18,15 @@ describe("VerifyEngine", () => {
   const tempDirs: string[] = [];
 
   function makeTempDir(): string {
-    const dir = mkdtempSync(join(tmpdir(), "repograph-verify-test-"));
+    const dir = mkdtempSync(join(tmpdir(), "ariadne-verify-test-"));
     tempDirs.push(dir);
     return dir;
   }
 
   beforeEach(() => {
     repoRoot = makeTempDir();
-    mkdirSync(join(repoRoot, ".repograph"), { recursive: true });
-    db = createDatabase(join(repoRoot, ".repograph", "index.db"));
+    mkdirSync(join(repoRoot, ".ariadne"), { recursive: true });
+    db = createDatabase(join(repoRoot, ".ariadne", "index.db"));
     queries = new StoreQueries(db);
     ledger = new Ledger(db);
   });
@@ -284,21 +284,21 @@ describe("VerifyEngine", () => {
   // ── Full engine ─────────────────────────────────────────────────────
 
   describe("VerifyEngine.verify()", () => {
-    it("should return FAIL when index is empty (no files indexed)", () => {
+    it("should return FAIL when index is empty (no files indexed)", async () => {
       const engine = new VerifyEngine(queries, ledger, repoRoot);
-      const report = engine.verify();
+      const report = await engine.verify();
 
       expect(report.status).toBe("FAIL");
       expect(report.checks.indexFreshness.passed).toBe(false);
       expect(report.summary).toContain("indexFreshness");
     });
 
-    it("should return OK when all checks pass", () => {
+    it("should return OK when all checks pass", async () => {
       // Insert a file so the index is non-empty
       queries.upsertFile({ path: "src/app.ts", language: "typescript", hash: "abc123" });
 
       const engine = new VerifyEngine(queries, ledger, repoRoot);
-      const report = engine.verify();
+      const report = await engine.verify();
 
       expect(report.status).toBe("OK");
       expect(report.checks.indexFreshness.passed).toBe(true);
@@ -307,58 +307,58 @@ describe("VerifyEngine", () => {
       expect(report.timestamp).toBeTypeOf("number");
     });
 
-    it("should return FAIL when index is stale", () => {
+    it("should return FAIL when index is stale", async () => {
       queries.upsertFile({ path: "src/index.ts", language: "typescript", hash: "abc" });
       queries.markDirty("src/index.ts");
 
       const engine = new VerifyEngine(queries, ledger, repoRoot);
-      const report = engine.verify();
+      const report = await engine.verify();
 
       expect(report.status).toBe("FAIL");
       expect(report.checks.indexFreshness.passed).toBe(false);
     });
 
-    it("should return FAIL when tests are missing after edit", () => {
+    it("should return FAIL when tests are missing after edit", async () => {
       queries.upsertFile({ path: "src/main.ts", language: "typescript", hash: "abc" });
       ledger.log("edit", { file: "src/main.ts" });
 
       const engine = new VerifyEngine(queries, ledger, repoRoot);
-      const report = engine.verify();
+      const report = await engine.verify();
 
       expect(report.status).toBe("FAIL");
       expect(report.checks.testCoverage.passed).toBe(false);
     });
 
-    it("should include summary listing failed check names", () => {
+    it("should include summary listing failed check names", async () => {
       queries.upsertFile({ path: "src/index.ts", language: "typescript", hash: "abc" });
       queries.markDirty("src/index.ts");
       ledger.log("edit", { file: "src/main.ts" });
 
       const engine = new VerifyEngine(queries, ledger, repoRoot);
-      const report = engine.verify();
+      const report = await engine.verify();
 
       expect(report.status).toBe("FAIL");
       expect(report.summary).toContain("indexFreshness");
       expect(report.summary).toContain("testCoverage");
     });
 
-    it("should return OK when only non-source files are dirty", () => {
+    it("should return OK when only non-source files are dirty", async () => {
       queries.upsertFile({ path: "src/app.ts", language: "typescript", hash: "abc123" });
       queries.markDirty("README.md");
       queries.markDirty("package.json");
 
       const engine = new VerifyEngine(queries, ledger, repoRoot);
-      const report = engine.verify();
+      const report = await engine.verify();
 
       expect(report.status).toBe("OK");
       expect(report.checks.indexFreshness.passed).toBe(true);
     });
 
-    it("should return structured report shape", () => {
+    it("should return structured report shape", async () => {
       queries.upsertFile({ path: "src/app.ts", language: "typescript", hash: "abc" });
 
       const engine = new VerifyEngine(queries, ledger, repoRoot);
-      const report = engine.verify();
+      const report = await engine.verify();
 
       expect(report).toHaveProperty("status");
       expect(report).toHaveProperty("timestamp");

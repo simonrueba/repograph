@@ -1,6 +1,6 @@
-import type { StoreQueries } from "../store/queries";
+import type { StoreQueries, OccurrenceRecord } from "../store/queries";
 import { basename } from "path";
-import { getSnippet, formatRange } from "./utils";
+import { getSnippet, formatRange, createSnippetCache } from "./utils";
 
 export interface ImpactResult {
   changedSymbols: { id: string; name: string; filePath: string }[];
@@ -43,18 +43,30 @@ function testCommand(path: string): string {
   return path.endsWith(".py") ? `pytest ${path}` : `vitest run ${path}`;
 }
 
+/** Internal result that carries cached occurrence data for reuse. */
+interface ImpactWithOccurrences {
+  result: ImpactResult;
+  /** Per-symbol occurrence cache: symbol ID → occurrences. */
+  occurrenceCache: Map<string, OccurrenceRecord[]>;
+}
+
 export class ImpactAnalyzer {
   constructor(
     private store: StoreQueries,
     private repoRoot: string,
   ) {}
 
-  computeImpact(changedPaths: string[]): ImpactResult {
+  /**
+   * Core impact computation that optionally caches occurrence queries
+   * so computeDetailedImpact() can reuse them without re-querying.
+   */
+  private _computeImpactInternal(changedPaths: string[]): ImpactWithOccurrences {
     const changedSymbols: ImpactResult["changedSymbols"] = [];
     const dependentFileSet = new Set<string>();
     const dependentFiles: ImpactResult["dependentFiles"] = [];
     const recommendedTests: ImpactResult["recommendedTests"] = [];
     const testFileSet = new Set<string>();
+    const occurrenceCache = new Map<string, OccurrenceRecord[]>();
 
     // 1. Find symbols defined in changed files
     for (const path of changedPaths) {
@@ -70,9 +82,10 @@ export class ImpactAnalyzer {
       }
     }
 
-    // 2. Find files that reference changed symbols
+    // 2. Find files that reference changed symbols (cache results for reuse)
     for (const cs of changedSymbols) {
       const refs = this.store.getOccurrencesBySymbol(cs.id);
+      occurrenceCache.set(cs.id, refs);
       for (const ref of refs) {
         if (
           !changedPaths.includes(ref.file_path) &&
@@ -125,11 +138,19 @@ export class ImpactAnalyzer {
       }
     }
 
-    return { changedSymbols, dependentFiles, recommendedTests, unresolvedRefs: [] };
+    return {
+      result: { changedSymbols, dependentFiles, recommendedTests, unresolvedRefs: [] },
+      occurrenceCache,
+    };
+  }
+
+  computeImpact(changedPaths: string[]): ImpactResult {
+    return this._computeImpactInternal(changedPaths).result;
   }
 
   computeDetailedImpact(changedPaths: string[]): DetailedImpactResult {
-    const base = this.computeImpact(changedPaths);
+    const { result: base, occurrenceCache } = this._computeImpactInternal(changedPaths);
+    const snippetCache = createSnippetCache();
 
     const symbolDetails: SymbolDetail[] = [];
     const keyRefs: KeyRef[] = [];
@@ -138,7 +159,7 @@ export class ImpactAnalyzer {
       const sym = this.store.getSymbol(cs.id);
       if (sym) {
         const range = formatRange(sym.range_start, sym.range_end);
-        const snippet = getSnippet(this.repoRoot, cs.filePath, range.startLine);
+        const snippet = getSnippet(this.repoRoot, cs.filePath, range.startLine, snippetCache);
         symbolDetails.push({
           id: sym.id,
           name: sym.name,
@@ -148,14 +169,14 @@ export class ImpactAnalyzer {
         });
       }
 
-      // Collect up to 3 non-definition references
-      const refs = this.store.getOccurrencesBySymbol(cs.id);
+      // Reuse cached occurrences from _computeImpactInternal (avoids duplicate DB query)
+      const refs = occurrenceCache.get(cs.id) ?? this.store.getOccurrencesBySymbol(cs.id);
       let count = 0;
       for (const occ of refs) {
         if (count >= 3) break;
         if (occ.roles & 1) continue; // skip definitions
         const range = formatRange(occ.range_start, occ.range_end);
-        const snippet = getSnippet(this.repoRoot, occ.file_path, range.startLine);
+        const snippet = getSnippet(this.repoRoot, occ.file_path, range.startLine, snippetCache);
         keyRefs.push({
           symbolName: cs.name,
           filePath: occ.file_path,

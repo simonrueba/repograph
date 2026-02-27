@@ -1,5 +1,5 @@
 {
-  "name": "repograph",
+  "name": "ariadne",
   "private": true,
   "workspaces": ["packages/*"],
   "scripts": {

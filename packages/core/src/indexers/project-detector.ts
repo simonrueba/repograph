@@ -184,7 +184,7 @@ export function detectProjects(repoRoot: string): DetectedProject[] {
  */
 function scanSubdirectories(absRoot: string): DetectedProject[] {
   const skipDirs = new Set([
-    "node_modules", "dist", "build", "out", ".git", ".repograph",
+    "node_modules", "dist", "build", "out", ".git", ".ariadne",
     ".next", ".nuxt", ".svelte-kit", "coverage", "__pycache__", ".venv", "venv",
   ]);
 

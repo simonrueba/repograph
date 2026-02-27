@@ -62,7 +62,7 @@ describe("MCP Server e2e", () => {
 
   beforeAll(async () => {
     // 1. Create a temp project with source files
-    testDir = mkdtempSync(join(tmpdir(), "repograph-mcp-test-"));
+    testDir = mkdtempSync(join(tmpdir(), "ariadne-mcp-test-"));
 
     writeFileSync(
       join(testDir, "tsconfig.json"),
@@ -124,7 +124,7 @@ export function greet(name: string): string {
 
     // 3. Spawn MCP server pointing at test dir
     serverProc = spawn("bun", ["run", MCP_SERVER], {
-      env: { ...process.env, REPOGRAPH_ROOT: testDir },
+      env: { ...process.env, ARIADNE_ROOT: testDir },
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -138,7 +138,7 @@ export function greet(name: string): string {
       clientInfo: { name: "test-client", version: "1.0.0" },
     });
     expect(initResponse.result).toBeDefined();
-    expect(initResponse.result.serverInfo.name).toBe("repograph");
+    expect(initResponse.result.serverInfo.name).toBe("ariadne");
 
     // Send initialized notification (no response expected)
     serverProc.stdin!.write(
@@ -163,15 +163,15 @@ export function greet(name: string): string {
     expect(tools).toHaveLength(9);
     const names = tools.map((t: any) => t.name).sort();
     expect(names).toEqual([
-      "repograph.call_graph",
-      "repograph.file_symbols",
-      "repograph.find_refs",
-      "repograph.get_def",
-      "repograph.impact",
-      "repograph.module_graph",
-      "repograph.search_symbol",
-      "repograph.status",
-      "repograph.symbol_graph",
+      "ariadne.call_graph",
+      "ariadne.file_symbols",
+      "ariadne.find_refs",
+      "ariadne.get_def",
+      "ariadne.impact",
+      "ariadne.module_graph",
+      "ariadne.search_symbol",
+      "ariadne.status",
+      "ariadne.symbol_graph",
     ]);
   });
 
@@ -194,11 +194,11 @@ export function greet(name: string): string {
     }
   });
 
-  // ── repograph.status ──────────────────────────────────────────────
+  // ── ariadne.status ──────────────────────────────────────────────
 
   it("status should return file and symbol counts", async () => {
     const response = await sendRequest(serverProc, "tools/call", {
-      name: "repograph.status",
+      name: "ariadne.status",
       arguments: {},
     });
 
@@ -210,11 +210,11 @@ export function greet(name: string): string {
     expect(data.lastIndexed).toBeTypeOf("number");
   });
 
-  // ── repograph.search_symbol ───────────────────────────────────────
+  // ── ariadne.search_symbol ───────────────────────────────────────
 
   it("search_symbol should return valid array", async () => {
     const response = await sendRequest(serverProc, "tools/call", {
-      name: "repograph.search_symbol",
+      name: "ariadne.search_symbol",
       arguments: { query: "add" },
     });
 
@@ -226,7 +226,7 @@ export function greet(name: string): string {
 
   it("search_symbol should respect k limit", async () => {
     const response = await sendRequest(serverProc, "tools/call", {
-      name: "repograph.search_symbol",
+      name: "ariadne.search_symbol",
       arguments: { query: "a", k: 2 },
     });
 
@@ -236,7 +236,7 @@ export function greet(name: string): string {
 
   it("search_symbol should return empty array for no matches", async () => {
     const response = await sendRequest(serverProc, "tools/call", {
-      name: "repograph.search_symbol",
+      name: "ariadne.search_symbol",
       arguments: { query: "zzz_nonexistent_zzz" },
     });
 
@@ -244,11 +244,11 @@ export function greet(name: string): string {
     expect(data).toEqual([]);
   });
 
-  // ── repograph.module_graph ────────────────────────────────────────
+  // ── ariadne.module_graph ────────────────────────────────────────
 
   it("module_graph should return nodes and edges", async () => {
     const response = await sendRequest(serverProc, "tools/call", {
-      name: "repograph.module_graph",
+      name: "ariadne.module_graph",
       arguments: {},
     });
 
@@ -262,7 +262,7 @@ export function greet(name: string): string {
 
   it("module_graph should scope to path prefix", async () => {
     const response = await sendRequest(serverProc, "tools/call", {
-      name: "repograph.module_graph",
+      name: "ariadne.module_graph",
       arguments: { path: "src/" },
     });
 
@@ -275,7 +275,7 @@ export function greet(name: string): string {
 
   it("module_graph should return DOT format", async () => {
     const response = await sendRequest(serverProc, "tools/call", {
-      name: "repograph.module_graph",
+      name: "ariadne.module_graph",
       arguments: { format: "dot" },
     });
 
@@ -286,7 +286,7 @@ export function greet(name: string): string {
 
   it("module_graph should return Mermaid format", async () => {
     const response = await sendRequest(serverProc, "tools/call", {
-      name: "repograph.module_graph",
+      name: "ariadne.module_graph",
       arguments: { format: "mermaid" },
     });
 
@@ -295,11 +295,11 @@ export function greet(name: string): string {
     expect(text).toContain("-->");
   });
 
-  // ── repograph.impact ──────────────────────────────────────────────
+  // ── ariadne.impact ──────────────────────────────────────────────
 
   it("impact should compute blast radius for a file", async () => {
     const response = await sendRequest(serverProc, "tools/call", {
-      name: "repograph.impact",
+      name: "ariadne.impact",
       arguments: { paths: ["src/math.ts"] },
     });
 
@@ -314,7 +314,7 @@ export function greet(name: string): string {
 
   it("impact should handle nonexistent file gracefully", async () => {
     const response = await sendRequest(serverProc, "tools/call", {
-      name: "repograph.impact",
+      name: "ariadne.impact",
       arguments: { paths: ["does/not/exist.ts"] },
     });
 
@@ -323,11 +323,11 @@ export function greet(name: string): string {
     expect(response.result.isError).toBeUndefined();
   });
 
-  // ── repograph.file_symbols ────────────────────────────────────────
+  // ── ariadne.file_symbols ────────────────────────────────────────
 
   it("file_symbols should return empty array for non-indexed file", async () => {
     const response = await sendRequest(serverProc, "tools/call", {
-      name: "repograph.file_symbols",
+      name: "ariadne.file_symbols",
       arguments: { path: "nonexistent.ts" },
     });
 
@@ -335,11 +335,11 @@ export function greet(name: string): string {
     expect(data).toEqual([]);
   });
 
-  // ── repograph.get_def ─────────────────────────────────────────────
+  // ── ariadne.get_def ─────────────────────────────────────────────
 
   it("get_def should return null for unknown symbol", async () => {
     const response = await sendRequest(serverProc, "tools/call", {
-      name: "repograph.get_def",
+      name: "ariadne.get_def",
       arguments: { symbolId: "nonexistent#symbol" },
     });
 
@@ -347,11 +347,11 @@ export function greet(name: string): string {
     expect(data).toBeNull();
   });
 
-  // ── repograph.find_refs ───────────────────────────────────────────
+  // ── ariadne.find_refs ───────────────────────────────────────────
 
   it("find_refs should return empty for unknown symbol", async () => {
     const response = await sendRequest(serverProc, "tools/call", {
-      name: "repograph.find_refs",
+      name: "ariadne.find_refs",
       arguments: { symbolId: "nonexistent#symbol" },
     });
 
@@ -360,11 +360,11 @@ export function greet(name: string): string {
     expect(data).toHaveLength(0);
   });
 
-  // ── repograph.symbol_graph ────────────────────────────────────────
+  // ── ariadne.symbol_graph ────────────────────────────────────────
 
   it("symbol_graph should return empty graph for unknown symbol", async () => {
     const response = await sendRequest(serverProc, "tools/call", {
-      name: "repograph.symbol_graph",
+      name: "ariadne.symbol_graph",
       arguments: { symbolId: "nonexistent#symbol" },
     });
 
@@ -377,7 +377,7 @@ export function greet(name: string): string {
 
   it("should return error for unknown tool", async () => {
     const response = await sendRequest(serverProc, "tools/call", {
-      name: "repograph.nonexistent",
+      name: "ariadne.nonexistent",
       arguments: {},
     });
 

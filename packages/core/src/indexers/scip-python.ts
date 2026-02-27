@@ -21,7 +21,7 @@ export class ScipPythonIndexer implements Indexer {
     const cwd = opts?.targetDir ?? repoRoot;
     const projectId = opts?.projectId ?? "root";
     const projectName = basename(cwd);
-    const cacheDir = join(repoRoot, ".repograph", "cache", "scip", projectId);
+    const cacheDir = join(repoRoot, ".ariadne", "cache", "scip", projectId);
     mkdirSync(cacheDir, { recursive: true });
     const cachedPath = join(cacheDir, "index-python.scip");
     const errors: string[] = [];

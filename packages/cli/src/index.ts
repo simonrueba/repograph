@@ -58,7 +58,7 @@ async function main() {
       const { outputError } = await import("./lib/output");
       outputError(
         "UNKNOWN_COMMAND",
-        `Unknown command: ${command}. Usage: repograph <setup|init|index|update|query|verify|ledger|status|dirty|doctor>`,
+        `Unknown command: ${command}. Usage: ariadne <setup|init|index|update|query|verify|ledger|status|dirty|doctor>`,
       );
     }
   }

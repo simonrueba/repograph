@@ -1,4 +1,4 @@
-# RepoGraph — Usage Guide
+# Ariadne — Usage Guide
 
 ## Prerequisites
 
@@ -16,7 +16,7 @@
 
     bun run packages/cli/src/index.ts init .
 
-Creates `.repograph/` with SQLite database, config files.
+Creates `.ariadne/` with SQLite database, config files.
 
 ### 3. Full index
 
@@ -57,7 +57,7 @@ Registers all source files, extracts imports, runs SCIP indexers.
     bun run packages/cli/src/index.ts verify .
 
 Runs: index freshness, test coverage tracking, TypeScript typecheck.
-Writes `.repograph/verify_last.json` (redacted).
+Writes `.ariadne/verify_last.json` (redacted).
 Exit code 1 on failure.
 
 ## Claude Code Integration
@@ -84,7 +84,7 @@ Gives Claude access to: `module_graph`, `symbol_graph`, `search_symbol`, `find_r
 ### When Stop Blocks
 
 If the Stop hook blocks, Claude will see:
-> "RepoGraph verification failed. See .repograph/verify_last.json for details."
+> "Ariadne verification failed. See .ariadne/verify_last.json for details."
 
 The report contains structured check results with recommendations. Common fixes:
 - **INDEX_STALE**: Run `update --full` to re-index dirty files

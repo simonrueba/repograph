@@ -12,7 +12,7 @@ export function runDirty(args: string[]): void {
     case "mark": {
       const path = args[1];
       if (!path || path.startsWith("--")) {
-        outputError("MISSING_PATH", "Usage: repograph dirty mark <file-path>");
+        outputError("MISSING_PATH", "Usage: ariadne dirty mark <file-path>");
       }
       const ctx = getContext(rootArg);
       ctx.store.markDirty(path);
@@ -37,7 +37,7 @@ export function runDirty(args: string[]): void {
     default:
       outputError(
         "UNKNOWN_SUBCOMMAND",
-        `Unknown dirty subcommand: ${subcommand}. Usage: repograph dirty <mark|list|clear>`,
+        `Unknown dirty subcommand: ${subcommand}. Usage: ariadne dirty <mark|list|clear>`,
       );
   }
 }

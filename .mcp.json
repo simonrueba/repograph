@@ -1,10 +1,10 @@
 {
   "mcpServers": {
-    "repograph": {
+    "ariadne": {
       "command": "bun",
       "args": ["run", "packages/mcp/src/index.ts"],
       "env": {
-        "REPOGRAPH_ROOT": "."
+        "ARIADNE_ROOT": "."
       }
     }
   }

@@ -1,4 +1,4 @@
-# RepoGraph Implementation Plan
+# Ariadne Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -34,7 +34,7 @@
 
 ```json
 {
-  "name": "repograph",
+  "name": "ariadne",
   "private": true,
   "workspaces": ["packages/*"],
   "scripts": {
@@ -81,7 +81,7 @@ peer = false
 
 ```json
 {
-  "name": "repograph-core",
+  "name": "ariadne-core",
   "version": "0.1.0",
   "type": "module",
   "main": "src/index.ts",
@@ -103,18 +103,18 @@ peer = false
 
 ```json
 {
-  "name": "repograph-cli",
+  "name": "ariadne-cli",
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "repograph": "src/index.ts"
+    "ariadne": "src/index.ts"
   },
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target bun",
     "test": "vitest run"
   },
   "dependencies": {
-    "repograph-core": "workspace:*"
+    "ariadne-core": "workspace:*"
   },
   "devDependencies": {
     "bun-types": "latest"
@@ -126,7 +126,7 @@ peer = false
 
 ```json
 {
-  "name": "repograph-mcp",
+  "name": "ariadne-mcp",
   "version": "0.1.0",
   "type": "module",
   "main": "src/index.ts",
@@ -136,7 +136,7 @@ peer = false
     "test": "vitest run"
   },
   "dependencies": {
-    "repograph-core": "workspace:*",
+    "ariadne-core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.27.0",
     "zod": "^3.23.0"
   },
@@ -154,7 +154,7 @@ Each package gets a `tsconfig.json` extending root, a stub `src/index.ts` export
 ```
 node_modules/
 dist/
-.repograph/
+.ariadne/
 *.scip
 ```
 
@@ -199,7 +199,7 @@ import { createDatabase, type RepographDB } from "../db";
 import { rmSync, mkdirSync } from "fs";
 
 describe("createDatabase", () => {
-  const testDir = "/tmp/repograph-test-db";
+  const testDir = "/tmp/ariadne-test-db";
 
   beforeEach(() => {
     rmSync(testDir, { recursive: true, force: true });
@@ -354,7 +354,7 @@ import { StoreQueries } from "../queries";
 import { rmSync, mkdirSync } from "fs";
 
 describe("StoreQueries", () => {
-  const testDir = "/tmp/repograph-test-queries";
+  const testDir = "/tmp/ariadne-test-queries";
   let db: RepographDB;
   let queries: StoreQueries;
 
@@ -637,7 +637,7 @@ import { Ledger } from "../ledger";
 import { rmSync, mkdirSync } from "fs";
 
 describe("Ledger", () => {
-  const testDir = "/tmp/repograph-test-ledger";
+  const testDir = "/tmp/ariadne-test-ledger";
   let ledger: Ledger;
 
   beforeEach(() => {
@@ -938,7 +938,7 @@ import { rmSync, mkdirSync, writeFileSync } from "fs";
 import { execSync } from "child_process";
 
 describe("ScipParser integration", () => {
-  const testDir = "/tmp/repograph-test-scip";
+  const testDir = "/tmp/ariadne-test-scip";
   const projectDir = `${testDir}/sample-project`;
 
   beforeEach(() => {
@@ -1034,7 +1034,7 @@ import { ScipPythonIndexer } from "../scip-python";
 import { rmSync, mkdirSync, writeFileSync } from "fs";
 
 describe("ScipTypeScriptIndexer", () => {
-  const testDir = "/tmp/repograph-test-indexer";
+  const testDir = "/tmp/ariadne-test-indexer";
   beforeEach(() => { rmSync(testDir, { recursive: true, force: true }); mkdirSync(testDir, { recursive: true }); });
   afterEach(() => { rmSync(testDir, { recursive: true, force: true }); });
 
@@ -1047,7 +1047,7 @@ describe("ScipTypeScriptIndexer", () => {
 });
 
 describe("ScipPythonIndexer", () => {
-  const testDir = "/tmp/repograph-test-indexer-py";
+  const testDir = "/tmp/ariadne-test-indexer-py";
   beforeEach(() => { rmSync(testDir, { recursive: true, force: true }); mkdirSync(testDir, { recursive: true }); });
   afterEach(() => { rmSync(testDir, { recursive: true, force: true }); });
 
@@ -1185,7 +1185,7 @@ git add packages/core/src/index.ts && git commit -m "feat(core): wire up public 
 - Create: `packages/cli/src/commands/status.ts`
 - Test: `packages/cli/__tests__/e2e.test.ts`
 
-CLI entry parses `process.argv`, routes to command modules. Each command gets context (db, store, ledger), calls core, prints JSON to stdout. `init` creates `.repograph/`, generates hook config and MCP config. `verify` exits 1 on FAIL with `REPOGRAPH_VERIFY: FAIL` to stderr.
+CLI entry parses `process.argv`, routes to command modules. Each command gets context (db, store, ledger), calls core, prints JSON to stdout. `init` creates `.ariadne/`, generates hook config and MCP config. `verify` exits 1 on FAIL with `ARIADNE_VERIFY: FAIL` to stderr.
 
 E2e test creates a temp project, runs init/update/ledger/verify commands via `execSync`.
 
@@ -1231,7 +1231,7 @@ git add packages/cli/src/hooks/ && git commit -m "feat(cli): add Claude Code hoo
 **Step 3:** Final commit
 
 ```bash
-git add -A && git commit -m "feat: complete MVP — repograph CLI, MCP server, hooks, verification"
+git add -A && git commit -m "feat: complete MVP — ariadne CLI, MCP server, hooks, verification"
 ```
 
 ---

@@ -1,4 +1,4 @@
-// repograph-core — public API
+// ariadne-core — public API
 
 // ── Store ────────────────────────────────────────────────────────────────
 export { createDatabase } from "./store/db";

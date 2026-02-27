@@ -1,4 +1,4 @@
-# RepoGraph + Gatekeeper — Design Document
+# Ariadne + Gatekeeper — Design Document
 
 **Date:** 2026-02-25
 **Status:** Approved
@@ -13,20 +13,20 @@ Build a CLI tool + MCP server that continuously indexes a repo into a semantic d
 ┌─────────────────────────────────────────────────────┐
 │                   Claude Code                        │
 │                                                      │
-│  PostToolUse hook ──→ repograph update               │
-│  Stop hook ──────────→ repograph verify              │
-│  MCP tools ──────────→ repograph-mcp server          │
+│  PostToolUse hook ──→ ariadne update               │
+│  Stop hook ──────────→ ariadne verify              │
+│  MCP tools ──────────→ ariadne-mcp server          │
 └─────────────────────────────────────────────────────┘
          │                    │                │
          ▼                    ▼                ▼
 ┌──────────────┐  ┌──────────────────┐  ┌───────────┐
-│ repograph CLI │  │ repograph-mcp    │  │  Hooks    │
+│ ariadne CLI │  │ ariadne-mcp    │  │  Hooks    │
 │              │  │ (stdio MCP)      │  │ (shell)   │
 └──────┬───────┘  └────────┬─────────┘  └─────┬─────┘
        │                   │                   │
        ▼                   ▼                   ▼
 ┌─────────────────────────────────────────────────────┐
-│              repograph-core (library)                 │
+│              ariadne-core (library)                 │
 │                                                      │
 │  ┌───────────┐ ┌──────────┐ ┌────────┐ ┌─────────┐ │
 │  │ Indexers   │ │ SCIP     │ │ Import │ │ Verify  │ │
@@ -36,7 +36,7 @@ Build a CLI tool + MCP server that continuously indexes a repo into a semantic d
 │        │             │           │            │      │
 │        ▼             ▼           ▼            ▼      │
 │  ┌─────────────────────────────────────────────────┐ │
-│  │          SQLite (.repograph/index.db)            │ │
+│  │          SQLite (.ariadne/index.db)            │ │
 │  │  files | symbols | occurrences | edges | ledger │ │
 │  └─────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────┘
@@ -50,7 +50,7 @@ Build a CLI tool + MCP server that continuously indexes a repo into a semantic d
 - **SQLite** via `better-sqlite3` (synchronous, fast)
 - **SCIP** as canonical semantic substrate via `scip-typescript` + `scip-python`
 - **Tree-sitter** for structural import extraction
-- **Soft gating**: Stop hook runs `repograph verify`, prints structured failure report
+- **Soft gating**: Stop hook runs `ariadne verify`, prints structured failure report
 
 ## Data Model (SQLite)
 
@@ -141,7 +141,7 @@ interface Indexer {
 
 ### Incremental Update Strategy
 
-`repograph update [--full]`:
+`ariadne update [--full]`:
 
 1. Walk repo, hash every tracked file
 2. Compare against `files.hash` in SQLite
@@ -156,17 +156,17 @@ After a single edit: structural layer updates immediately, SCIP refreshes on nex
 ## CLI Commands
 
 ```
-repograph init                          # Create .repograph/, init SQLite, install hooks
-repograph index [--full]                # Full SCIP + structural index
-repograph update [--full]               # Incremental update
-repograph query def <symbol-query>      # Find definition
-repograph query refs <symbol-id>        # Find all references
-repograph query search <query> [--k=N]  # Fuzzy search symbols
-repograph query impact <path>...        # Changed files → impacted symbols/files/tests
-repograph query module-graph [<path>]   # File/module dependency graph
-repograph verify                        # Gatekeeper checks (exit 0=OK, exit 1=FAIL)
-repograph ledger log <event> <json>     # Append to execution ledger
-repograph status                        # Index stats
+ariadne init                          # Create .ariadne/, init SQLite, install hooks
+ariadne index [--full]                # Full SCIP + structural index
+ariadne update [--full]               # Incremental update
+ariadne query def <symbol-query>      # Find definition
+ariadne query refs <symbol-id>        # Find all references
+ariadne query search <query> [--k=N]  # Fuzzy search symbols
+ariadne query impact <path>...        # Changed files → impacted symbols/files/tests
+ariadne query module-graph [<path>]   # File/module dependency graph
+ariadne verify                        # Gatekeeper checks (exit 0=OK, exit 1=FAIL)
+ariadne ledger log <event> <json>     # Append to execution ledger
+ariadne status                        # Index stats
 ```
 
 All commands output JSON to stdout. `--pretty` for human-readable.
@@ -174,16 +174,16 @@ All commands output JSON to stdout. `--pretty` for human-readable.
 ## MCP Tools
 
 ```
-repograph.search_symbol(query, k?)
+ariadne.search_symbol(query, k?)
   → [{ id, name, kind, filePath, range }]
 
-repograph.get_def(symbolId)
+ariadne.get_def(symbolId)
   → { id, name, kind, filePath, range, doc, snippet }
 
-repograph.find_refs(symbolId, scope?)
+ariadne.find_refs(symbolId, scope?)
   → [{ filePath, range, roles, snippet }]
 
-repograph.impact(paths: string[])
+ariadne.impact(paths: string[])
   → {
       changedSymbols: [{ id, name, filePath }],
       dependentFiles: [{ path, reason }],
@@ -191,10 +191,10 @@ repograph.impact(paths: string[])
       unresolvedRefs: [{ symbolId, filePath, range }]
     }
 
-repograph.module_graph(path?)
+ariadne.module_graph(path?)
   → { nodes: [{ path, language }], edges: [{ from, to, kind }] }
 
-repograph.status()
+ariadne.status()
   → { totalFiles, totalSymbols, staleFiles, lastIndexed }
 ```
 
@@ -209,11 +209,11 @@ All tools are `readOnlyHint: true`. Return IDs + paths + ranges + short snippets
 
 ## Gatekeeper Verification
 
-`repograph verify` runs checks, exit 0=OK, exit 1=FAIL.
+`ariadne verify` runs checks, exit 0=OK, exit 1=FAIL.
 
 ### Check 1: Unupdated References
 
-- Compute diff since last verified state (`.repograph/verified-ref`)
+- Compute diff since last verified state (`.ariadne/verified-ref`)
 - Extract changed symbols whose definition range overlaps changed lines
 - If signature changed: find all references via SCIP
 - FAIL if any reference site not also modified
@@ -244,14 +244,14 @@ All tools are `readOnlyHint: true`. Return IDs + paths + ranges + short snippets
 }
 ```
 
-On pass: store git HEAD as `.repograph/verified-ref`, append `verify: PASS` to ledger, print `REPOGRAPH_VERIFY: OK`.
+On pass: store git HEAD as `.ariadne/verified-ref`, append `verify: PASS` to ledger, print `ARIADNE_VERIFY: OK`.
 
 ## Claude Code Integration
 
 ### PostToolUse — After File Edits
 
 Trigger on `Edit|Write|NotebookEdit`:
-- `repograph update` (structural refresh)
+- `ariadne update` (structural refresh)
 - Log edit to ledger
 
 ### PostToolUse — After Test Runs
@@ -261,37 +261,37 @@ Trigger on `Bash`, pattern-match for test runners (`vitest|jest|pytest|bun test`
 
 ### Stop Hook — Gatekeeper Gate
 
-- `repograph update --full` (full SCIP refresh)
-- `repograph verify`
+- `ariadne update --full` (full SCIP refresh)
+- `ariadne verify`
 - If FAIL: structured report → agent sees it, must address issues
-- If OK: `REPOGRAPH_VERIFY: OK`, agent stops cleanly
+- If OK: `ARIADNE_VERIFY: OK`, agent stops cleanly
 
 ### MCP Registration
 
 ```json
 {
   "mcpServers": {
-    "repograph": {
+    "ariadne": {
       "type": "stdio",
       "command": "bun",
-      "args": ["run", "--filter", "repograph-mcp", "start"],
-      "env": { "REPOGRAPH_ROOT": "${PWD}" }
+      "args": ["run", "--filter", "ariadne-mcp", "start"],
+      "env": { "ARIADNE_ROOT": "${PWD}" }
     }
   }
 }
 ```
 
-`repograph init` creates hooks config + MCP registration automatically.
+`ariadne init` creates hooks config + MCP registration automatically.
 
 ## Package Structure
 
 ```
-repograph/
+ariadne/
 ├── package.json                    # Bun workspace root
 ├── bunfig.toml
 ├── tsconfig.json
 ├── packages/
-│   ├── core/                       # repograph-core library
+│   ├── core/                       # ariadne-core library
 │   │   ├── src/
 │   │   │   ├── index.ts
 │   │   │   ├── store/              # db.ts, schema.ts, queries.ts
@@ -301,18 +301,18 @@ repograph/
 │   │   │   ├── verify/            # engine.ts, unupdated-refs.ts, missing-tests.ts, index-freshness.ts
 │   │   │   └── ledger/            # ledger.ts
 │   │   └── __tests__/
-│   ├── cli/                        # repograph CLI
+│   ├── cli/                        # ariadne CLI
 │   │   ├── src/
 │   │   │   ├── index.ts
 │   │   │   └── commands/           # init.ts, index-cmd.ts, update.ts, query.ts, verify.ts, ledger.ts, status.ts
 │   │   └── __tests__/
-│   └── mcp/                        # repograph-mcp server
+│   └── mcp/                        # ariadne-mcp server
 │       ├── src/
 │       │   ├── index.ts
 │       │   └── tools/              # search-symbol.ts, get-def.ts, find-refs.ts, impact.ts, module-graph.ts, status.ts
 │       └── __tests__/
 ├── docs/plans/
-└── .repograph/                     # Created by repograph init (gitignored)
+└── .ariadne/                     # Created by ariadne init (gitignored)
 ```
 
 ### Key Dependencies

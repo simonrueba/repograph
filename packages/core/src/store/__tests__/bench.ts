@@ -40,7 +40,7 @@ const REFS_PER_FILE = 200; // 10 000 total edges/occurrences
 const TOTAL_SYMBOLS = NUM_FILES * SYMBOLS_PER_FILE;
 const TOTAL_EDGES = NUM_FILES * REFS_PER_FILE;
 
-const dir = mkdtempSync(join(tmpdir(), "repograph-bench-"));
+const dir = mkdtempSync(join(tmpdir(), "ariadne-bench-"));
 const dbPath = join(dir, "bench.db");
 const db = createDatabase(dbPath);
 const store = new StoreQueries(db);

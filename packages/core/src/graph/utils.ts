@@ -15,15 +15,31 @@ export function formatRange(
   return { startLine: s.line, startCol: s.col, endLine: e.line, endCol: e.col };
 }
 
+/** Per-query file content cache to avoid redundant readFileSync calls. */
+export type SnippetCache = Map<string, string[]>;
+
+export function createSnippetCache(): SnippetCache {
+  return new Map();
+}
+
 /** Read up to 3 lines of code starting at startLine for a snippet. */
 export function getSnippet(
   repoRoot: string,
   filePath: string,
   startLine: number,
+  cache?: SnippetCache,
 ): string | undefined {
   try {
-    const content = readFileSync(join(repoRoot, filePath), "utf-8");
-    const lines = content.split("\n");
+    let lines: string[] | undefined;
+    if (cache) {
+      lines = cache.get(filePath);
+      if (!lines) {
+        lines = readFileSync(join(repoRoot, filePath), "utf-8").split("\n");
+        cache.set(filePath, lines);
+      }
+    } else {
+      lines = readFileSync(join(repoRoot, filePath), "utf-8").split("\n");
+    }
     return lines
       .slice(Math.max(0, startLine), Math.min(lines.length, startLine + 3))
       .join("\n");

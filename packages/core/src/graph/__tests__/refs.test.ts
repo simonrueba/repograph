@@ -14,7 +14,7 @@ describe("GraphQueries", () => {
   let dbPath: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "repograph-graph-test-"));
+    tempDir = mkdtempSync(join(tmpdir(), "ariadne-graph-test-"));
     dbPath = join(tempDir, "test.db");
     db = createDatabase(dbPath);
     store = new StoreQueries(db);

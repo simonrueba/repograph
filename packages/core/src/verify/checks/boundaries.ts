@@ -23,7 +23,7 @@ export function checkBoundaries(
   store: StoreQueries,
   repoRoot: string,
 ): BoundaryCheckResult {
-  const configPath = join(repoRoot, "repograph.boundaries.json");
+  const configPath = join(repoRoot, "ariadne.boundaries.json");
   if (!existsSync(configPath)) {
     return { passed: true, issues: [] };
   }
@@ -58,30 +58,25 @@ export function checkBoundaries(
     return bestMatch;
   }
 
-  // Check all "imports" edges
-  const allFiles = store.getAllFiles();
-  for (const file of allFiles) {
-    const sourceLayer = getLayer(file.path);
+  // Fetch all import edges in a single query instead of N per-file queries
+  const importEdges = store.getImportEdges();
+  for (const edge of importEdges) {
+    const sourceLayer = getLayer(edge.source);
     if (!sourceLayer) continue;
 
-    const edges = store.getEdgesBySource(file.path);
-    for (const edge of edges) {
-      if (edge.kind !== "imports") continue;
+    const targetLayer = getLayer(edge.target);
+    if (!targetLayer) continue;
+    if (targetLayer === sourceLayer) continue;
 
-      const targetLayer = getLayer(edge.target);
-      if (!targetLayer) continue;
-      if (targetLayer === sourceLayer) continue;
-
-      const allowedImports = config.layers[sourceLayer].canImport;
-      if (!allowedImports.includes(targetLayer)) {
-        issues.push({
-          type: "BOUNDARY_VIOLATION",
-          sourceFile: file.path,
-          sourceLayer,
-          targetLayer,
-          importTarget: edge.target,
-        });
-      }
+    const allowedImports = config.layers[sourceLayer].canImport;
+    if (!allowedImports.includes(targetLayer)) {
+      issues.push({
+        type: "BOUNDARY_VIOLATION",
+        sourceFile: edge.source,
+        sourceLayer,
+        targetLayer,
+        importTarget: edge.target,
+      });
     }
   }
 

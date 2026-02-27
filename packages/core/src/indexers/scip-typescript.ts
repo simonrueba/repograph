@@ -20,7 +20,7 @@ export class ScipTypescriptIndexer implements Indexer {
     const cwd = opts?.targetDir ?? repoRoot;
     const projectId = opts?.projectId ?? "root";
     const rawOutputPath = join(cwd, "index.scip");
-    const cacheDir = join(repoRoot, ".repograph", "cache", "scip", projectId);
+    const cacheDir = join(repoRoot, ".ariadne", "cache", "scip", projectId);
     mkdirSync(cacheDir, { recursive: true });
     const cachedPath = join(cacheDir, "index.scip");
     const errors: string[] = [];

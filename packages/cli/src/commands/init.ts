@@ -1,18 +1,18 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync, appendFileSync } from "fs";
 import { join } from "path";
-import { createDatabase } from "repograph-core";
+import { createDatabase } from "ariadne-core";
 import { output } from "../lib/output";
 
 export async function runInit(args: string[]): Promise<void> {
   const repoRoot = args[0] || process.cwd();
-  const repographDir = join(repoRoot, ".repograph");
+  const ariadneDir = join(repoRoot, ".ariadne");
 
-  // 1. Create .repograph directory
-  mkdirSync(repographDir, { recursive: true });
-  mkdirSync(join(repographDir, "cache", "scip"), { recursive: true });
+  // 1. Create .ariadne directory
+  mkdirSync(ariadneDir, { recursive: true });
+  mkdirSync(join(ariadneDir, "cache", "scip"), { recursive: true });
 
   // 2. Initialize SQLite DB (creates schema)
-  const dbPath = join(repographDir, "index.db");
+  const dbPath = join(ariadneDir, "index.db");
   const db = createDatabase(dbPath);
   db.close();
 
@@ -23,13 +23,13 @@ export async function runInit(args: string[]): Promise<void> {
     repoRoot,
   };
   writeFileSync(
-    join(repographDir, "state.json"),
+    join(ariadneDir, "state.json"),
     JSON.stringify(stateJson, null, 2),
   );
 
-  // 4. Add .repograph/ to .gitignore if not already present
+  // 4. Add .ariadne/ to .gitignore if not already present
   const gitignorePath = join(repoRoot, ".gitignore");
-  const gitignoreEntry = ".repograph/";
+  const gitignoreEntry = ".ariadne/";
   if (existsSync(gitignorePath)) {
     const content = readFileSync(gitignorePath, "utf-8");
     if (!content.includes(gitignoreEntry)) {
@@ -44,29 +44,29 @@ export async function runInit(args: string[]): Promise<void> {
     hooks: [
       {
         event: "file_edited",
-        command: "repograph update",
+        command: "ariadne update",
       },
       {
         event: "test_completed",
-        command: "repograph ledger log test_run '{}'",
+        command: "ariadne ledger log test_run '{}'",
       },
     ],
   };
   writeFileSync(
-    join(repographDir, "hooks.json"),
+    join(ariadneDir, "hooks.json"),
     JSON.stringify(hooksConfig, null, 2),
   );
 
   // 6. Write mcp.json (MCP server config)
   const mcpConfig = {
-    name: "repograph",
+    name: "ariadne",
     version: "0.1.0",
     tools: ["query", "verify", "status"],
   };
   writeFileSync(
-    join(repographDir, "mcp.json"),
+    join(ariadneDir, "mcp.json"),
     JSON.stringify(mcpConfig, null, 2),
   );
 
-  output("init", { repographDir, dbPath });
+  output("init", { ariadneDir, dbPath });
 }

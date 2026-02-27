@@ -8,7 +8,7 @@ describe("createDatabase", () => {
   const tempDirs: string[] = [];
 
   function makeTempDb(): string {
-    const dir = mkdtempSync(join(tmpdir(), "repograph-test-"));
+    const dir = mkdtempSync(join(tmpdir(), "ariadne-test-"));
     tempDirs.push(dir);
     return join(dir, "test.db");
   }

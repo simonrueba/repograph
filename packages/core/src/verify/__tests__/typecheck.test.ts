@@ -14,8 +14,8 @@ describe("suggestQueries", () => {
         "Argument of type 'string' is not assignable to parameter of type 'number'.",
         "src/utils.ts",
       );
-      expect(suggestions).toContain("repograph query impact src/utils.ts");
-      expect(suggestions).toContain("repograph query search string");
+      expect(suggestions).toContain("ariadne query impact src/utils.ts");
+      expect(suggestions).toContain("ariadne query search string");
     });
 
     it("should suggest only impact when message has no quoted identifier", () => {
@@ -24,7 +24,7 @@ describe("suggestQueries", () => {
         "Argument of type is not assignable to parameter type.",
         "src/utils.ts",
       );
-      expect(suggestions).toContain("repograph query impact src/utils.ts");
+      expect(suggestions).toContain("ariadne query impact src/utils.ts");
       expect(suggestions).toHaveLength(1);
     });
   });
@@ -37,8 +37,8 @@ describe("suggestQueries", () => {
         "Module 'src/math' has no exported member 'subtract'.",
         "src/index.ts",
       );
-      expect(suggestions).toContain("repograph query impact src/index.ts");
-      expect(suggestions).toContain("repograph query search subtract");
+      expect(suggestions).toContain("ariadne query impact src/index.ts");
+      expect(suggestions).toContain("ariadne query search subtract");
     });
 
     it("should fall back to first identifier when only one quoted token exists", () => {
@@ -47,7 +47,7 @@ describe("suggestQueries", () => {
         "Module has no exported member 'missingExport'.",
         "src/index.ts",
       );
-      expect(suggestions).toContain("repograph query search missingExport");
+      expect(suggestions).toContain("ariadne query search missingExport");
     });
   });
 
@@ -58,8 +58,8 @@ describe("suggestQueries", () => {
         "Property 'foo' does not exist on type 'Bar'.",
         "src/component.ts",
       );
-      expect(suggestions).toContain("repograph query impact src/component.ts");
-      expect(suggestions).toContain("repograph query search foo");
+      expect(suggestions).toContain("ariadne query impact src/component.ts");
+      expect(suggestions).toContain("ariadne query search foo");
     });
 
     it("should suggest only impact when no identifier is found", () => {
@@ -69,7 +69,7 @@ describe("suggestQueries", () => {
         "src/component.ts",
       );
       expect(suggestions).toHaveLength(1);
-      expect(suggestions[0]).toBe("repograph query impact src/component.ts");
+      expect(suggestions[0]).toBe("ariadne query impact src/component.ts");
     });
   });
 
@@ -80,8 +80,8 @@ describe("suggestQueries", () => {
         "Cannot find name 'MyClass'.",
         "src/app.ts",
       );
-      expect(suggestions).toContain("repograph query impact src/app.ts");
-      expect(suggestions).toContain("repograph query search MyClass");
+      expect(suggestions).toContain("ariadne query impact src/app.ts");
+      expect(suggestions).toContain("ariadne query search MyClass");
     });
 
     it("should suggest only impact when no identifier is quoted", () => {
@@ -101,8 +101,8 @@ describe("suggestQueries", () => {
         "Type 'string' is not assignable to type 'number'.",
         "src/parser.ts",
       );
-      expect(suggestions).toContain("repograph query impact src/parser.ts");
-      expect(suggestions).toContain("repograph query search string");
+      expect(suggestions).toContain("ariadne query impact src/parser.ts");
+      expect(suggestions).toContain("ariadne query search string");
     });
 
     it("should include exactly two suggestions when identifier is present", () => {
@@ -120,7 +120,7 @@ describe("suggestQueries", () => {
         "Type is not assignable to type.",
         "src/validate.ts",
       );
-      expect(suggestions).toContain("repograph query impact src/validate.ts");
+      expect(suggestions).toContain("ariadne query impact src/validate.ts");
       expect(suggestions).toHaveLength(1);
     });
   });
@@ -133,7 +133,7 @@ describe("suggestQueries", () => {
         "src/foo.ts",
       );
       expect(suggestions).toHaveLength(1);
-      expect(suggestions[0]).toBe("repograph query impact src/foo.ts");
+      expect(suggestions[0]).toBe("ariadne query impact src/foo.ts");
     });
 
     it("should return an empty array when file is empty string", () => {
@@ -150,8 +150,8 @@ describe("suggestQueries", () => {
         "",
       );
       // No impact suggestion since file is falsy; search still appears
-      expect(suggestions).not.toContain("repograph query impact ");
-      expect(suggestions).toContain("repograph query search Foo");
+      expect(suggestions).not.toContain("ariadne query impact ");
+      expect(suggestions).toContain("ariadne query search Foo");
     });
 
     it("should emit only search when file is empty for TS2322", () => {
@@ -162,7 +162,7 @@ describe("suggestQueries", () => {
       );
       // No impact suggestion since file is falsy; only search for identifier
       expect(suggestions).toHaveLength(1);
-      expect(suggestions).toContain("repograph query search X");
+      expect(suggestions).toContain("ariadne query search X");
     });
   });
 
@@ -173,7 +173,7 @@ describe("suggestQueries", () => {
         "Cannot find name `MyInterface`.",
         "src/types.ts",
       );
-      expect(suggestions).toContain("repograph query search MyInterface");
+      expect(suggestions).toContain("ariadne query search MyInterface");
     });
 
     it("should handle dotted identifier names such as 'Foo.bar'", () => {
@@ -182,7 +182,7 @@ describe("suggestQueries", () => {
         "Property 'Foo.bar' does not exist on type 'Baz'.",
         "src/service.ts",
       );
-      expect(suggestions).toContain("repograph query search Foo.bar");
+      expect(suggestions).toContain("ariadne query search Foo.bar");
     });
   });
 });
@@ -193,7 +193,7 @@ describe("checkTypecheck", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "repograph-typecheck-test-"));
+    tempDir = mkdtempSync(join(tmpdir(), "ariadne-typecheck-test-"));
   });
 
   afterEach(() => {
