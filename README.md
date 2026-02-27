@@ -83,7 +83,7 @@ All commands output JSON. Symbol IDs are SCIP symbol strings returned by `search
 | `setup [path] [--quick]` | One-command setup: init + index + generate hooks & MCP config. `--quick` skips SCIP. |
 | `init [path]` | Create `.repograph/` directory and SQLite database |
 | `index [path] [--structural-only]` | Full index: structural imports + SCIP analysis. `--structural-only` skips SCIP. |
-| `update [--full]` | Incremental update (structural only, or `--full` for SCIP re-index) |
+| `update [--full]` | Incremental update: structural imports + auto SCIP when dirty source files exist. `--full` forces SCIP even when clean. |
 | `query search <query>` | Fuzzy search symbols by name |
 | `query def <symbol-id>` | Get definition location, docs, and code snippet |
 | `query refs <symbol-id>` | Find all references across the codebase |
@@ -135,9 +135,9 @@ The MCP server starts gracefully even if `.repograph/` doesn't exist yet — it 
 ### What the hooks do
 
 - **Pre-edit impact hook** (`Edit|Write` PreToolUse): runs `repograph impact` before every source file edit and injects the blast radius (changed symbols, dependent files, recommended tests) as context so Claude sees what will be affected. Silently skips test files, non-source files, and uninitialized projects. ~240ms latency.
-- **Post-edit hook** (`Edit|Write` PostToolUse): marks edited files dirty, runs `repograph update`, logs the edit to the ledger
+- **Post-edit hook** (`Edit|Write` PostToolUse): marks edited source files (`.ts/.tsx/.js/.jsx/.py`) dirty, runs `repograph update`, logs the edit to the ledger. Non-source files (README, config, etc.) are skipped to avoid false-positive freshness failures.
 - **Post-test hook** (`Bash` PostToolUse): detects test runner commands (vitest, jest, pytest, bun test, mocha, ava, cargo test, go test, playwright), logs `test_run` to the ledger
-- **Stop hook**: runs structural update, then full SCIP re-index if files are dirty, then `repograph verify`. On failure, outputs `{"decision":"block","reason":"..."}` to prevent Claude from stopping until issues are fixed
+- **Stop hook**: runs `repograph update` (auto-triggers SCIP when dirty source files exist), then `repograph verify`. On failure, outputs `{"decision":"block","reason":"..."}` to prevent Claude from stopping until issues are fixed
 
 The stop hook uses atomic `mkdir`-based locking to prevent concurrent runs, checks `stop_hook_active` from stdin to prevent infinite loops, and has a 120s stale lock timeout.
 
@@ -148,7 +148,7 @@ All hooks guard against missing `.repograph/` — they silently exit if the proj
 `repograph verify` runs these checks:
 
 1. **Empty index** — fails if zero files are indexed (prevents vacuous pass on uninitialized projects)
-2. **Index freshness** — checks the dirty set (files marked changed by hooks or `update`). Fails if any dirty files exist that haven't been covered by a full SCIP index pass.
+2. **Index freshness** — checks the dirty set (files marked changed by hooks or `update`), filtering to source files only. Fails if any dirty source files exist that haven't been covered by a SCIP index pass. Non-source files are ignored since SCIP can't index them.
 3. **Missing test runs** — checks the ledger for a `test_run` event after the most recent `edit`. Fails if no tests were run after editing.
 4. **Typecheck** — runs `tsc --noEmit` against the repo's `tsconfig.json`. Fails on any type errors. On failure, includes recommendations with `repograph query impact` commands for the top error files. Skipped if no `tsconfig.json` exists.
 
@@ -157,7 +157,7 @@ All hooks guard against missing `.repograph/` — they silently exit if the proj
 Two-pass pipeline:
 
 1. **Structural pass** (instant, per-file) — regex-based extraction of `import`/`export`/`from` statements, including side-effect imports (`import "module"`), dynamic imports (`import("module")`), and Python relative imports (`from . import`). Creates file-level `imports` edges. Runs on every `update`.
-2. **SCIP pass** (slower, full project) — runs `scip-typescript` or `scip-python` per detected sub-project, producing a protobuf index. The parser decodes it and extracts symbols, occurrences (with line:col ranges), and definition/reference roles. Creates symbol-level `defines` and `references` edges. Runs on `index` and `update --full` only.
+2. **SCIP pass** (slower, full project) — runs `scip-typescript` or `scip-python` per detected sub-project, producing a protobuf index. The parser decodes it and extracts symbols, occurrences (with line:col ranges), and definition/reference roles. Creates symbol-level `defines` and `references` edges. Runs on `index`, `update` (when dirty source files exist), and `update --full` (forced).
 
 Both passes write to the same SQLite database (`.repograph/index.db`). The database uses WAL mode, `busy_timeout=5000` for concurrent access from hooks, and transactions for atomic SCIP ingestion. Bulk ingestion uses index-drop/recreate and `PRAGMA synchronous=OFF` for faster writes, and skips unchanged files by content hash comparison.
 
@@ -179,7 +179,7 @@ Output formats: `json` (default), `dot` (Graphviz), `mermaid`.
 
 ```
 packages/
-  core/     repograph-core library (280+ tests)
+  core/     repograph-core library (300+ tests)
     src/
       store/       SQLite schema, queries, transactions
       scip/        protobuf parser + SCIP types
@@ -199,7 +199,7 @@ packages/
 
 ```bash
 bun install
-bun test                  # 280+ tests across 15 files
+bun test                  # 300+ tests across 15 files
 bunx tsc --noEmit         # type-check all packages
 bun run packages/cli/src/index.ts doctor  # check prerequisites
 ```
