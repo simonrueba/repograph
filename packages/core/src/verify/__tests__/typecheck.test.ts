@@ -8,14 +8,14 @@ import { suggestQueries, checkTypecheck } from "../checks/typecheck";
 
 describe("suggestQueries", () => {
   describe("TS2345 — Argument of type 'X' is not assignable to parameter of type 'Y'", () => {
-    it("should suggest impact and search_symbol for the first quoted identifier", () => {
+    it("should suggest impact and search for the first quoted identifier", () => {
       const suggestions = suggestQueries(
         "TS2345",
         "Argument of type 'string' is not assignable to parameter of type 'number'.",
         "src/utils.ts",
       );
       expect(suggestions).toContain("repograph query impact src/utils.ts");
-      expect(suggestions).toContain("repograph query search_symbol string");
+      expect(suggestions).toContain("repograph query search string");
     });
 
     it("should suggest only impact when message has no quoted identifier", () => {
@@ -30,7 +30,7 @@ describe("suggestQueries", () => {
   });
 
   describe("TS2305 — Module '...' has no exported member 'X'", () => {
-    it("should suggest impact and search_symbol for the last quoted identifier", () => {
+    it("should suggest impact and search for the last quoted identifier", () => {
       // The last quoted identifier is the missing export name
       const suggestions = suggestQueries(
         "TS2305",
@@ -38,7 +38,7 @@ describe("suggestQueries", () => {
         "src/index.ts",
       );
       expect(suggestions).toContain("repograph query impact src/index.ts");
-      expect(suggestions).toContain("repograph query search_symbol subtract");
+      expect(suggestions).toContain("repograph query search subtract");
     });
 
     it("should fall back to first identifier when only one quoted token exists", () => {
@@ -47,19 +47,19 @@ describe("suggestQueries", () => {
         "Module has no exported member 'missingExport'.",
         "src/index.ts",
       );
-      expect(suggestions).toContain("repograph query search_symbol missingExport");
+      expect(suggestions).toContain("repograph query search missingExport");
     });
   });
 
   describe("TS2339 — Property 'X' does not exist on type 'Y'", () => {
-    it("should suggest impact and search_symbol for the property name", () => {
+    it("should suggest impact and search for the property name", () => {
       const suggestions = suggestQueries(
         "TS2339",
         "Property 'foo' does not exist on type 'Bar'.",
         "src/component.ts",
       );
       expect(suggestions).toContain("repograph query impact src/component.ts");
-      expect(suggestions).toContain("repograph query search_symbol foo");
+      expect(suggestions).toContain("repograph query search foo");
     });
 
     it("should suggest only impact when no identifier is found", () => {
@@ -74,14 +74,14 @@ describe("suggestQueries", () => {
   });
 
   describe("TS2304 — Cannot find name 'X'", () => {
-    it("should suggest impact and search_symbol for the missing name", () => {
+    it("should suggest impact and search for the missing name", () => {
       const suggestions = suggestQueries(
         "TS2304",
         "Cannot find name 'MyClass'.",
         "src/app.ts",
       );
       expect(suggestions).toContain("repograph query impact src/app.ts");
-      expect(suggestions).toContain("repograph query search_symbol MyClass");
+      expect(suggestions).toContain("repograph query search MyClass");
     });
 
     it("should suggest only impact when no identifier is quoted", () => {
@@ -95,34 +95,33 @@ describe("suggestQueries", () => {
   });
 
   describe("TS2322 — Type 'X' is not assignable to type 'Y'", () => {
-    it("should suggest impact, find_refs, and search_symbol", () => {
+    it("should suggest impact and search for the identifier", () => {
       const suggestions = suggestQueries(
         "TS2322",
         "Type 'string' is not assignable to type 'number'.",
         "src/parser.ts",
       );
       expect(suggestions).toContain("repograph query impact src/parser.ts");
-      expect(suggestions).toContain("repograph query find_refs src/parser.ts");
-      expect(suggestions).toContain("repograph query search_symbol string");
+      expect(suggestions).toContain("repograph query search string");
     });
 
-    it("should include exactly three suggestions when identifier is present", () => {
+    it("should include exactly two suggestions when identifier is present", () => {
       const suggestions = suggestQueries(
         "TS2322",
         "Type 'boolean' is not assignable to type 'string'.",
         "src/validate.ts",
       );
-      expect(suggestions).toHaveLength(3);
+      expect(suggestions).toHaveLength(2);
     });
 
-    it("should include impact and find_refs even when no identifier is present", () => {
+    it("should include only impact when no identifier is present", () => {
       const suggestions = suggestQueries(
         "TS2322",
         "Type is not assignable to type.",
         "src/validate.ts",
       );
       expect(suggestions).toContain("repograph query impact src/validate.ts");
-      expect(suggestions).toContain("repograph query find_refs src/validate.ts");
+      expect(suggestions).toHaveLength(1);
     });
   });
 
@@ -150,20 +149,20 @@ describe("suggestQueries", () => {
         "Argument of type 'Foo' is not assignable to parameter of type 'Bar'.",
         "",
       );
-      // No impact suggestion since file is falsy; search_symbol still appears
+      // No impact suggestion since file is falsy; search still appears
       expect(suggestions).not.toContain("repograph query impact ");
-      expect(suggestions).toContain("repograph query search_symbol Foo");
+      expect(suggestions).toContain("repograph query search Foo");
     });
 
-    it("should not emit find_refs when file is empty for TS2322", () => {
+    it("should emit only search when file is empty for TS2322", () => {
       const suggestions = suggestQueries(
         "TS2322",
         "Type 'X' is not assignable to type 'Y'.",
         "",
       );
-      const findRefs = suggestions.filter((s) => s.startsWith("repograph query find_refs"));
-      // find_refs is guarded by `if (file)` in the implementation
-      expect(findRefs).toHaveLength(0);
+      // No impact suggestion since file is falsy; only search for identifier
+      expect(suggestions).toHaveLength(1);
+      expect(suggestions).toContain("repograph query search X");
     });
   });
 
@@ -174,7 +173,7 @@ describe("suggestQueries", () => {
         "Cannot find name `MyInterface`.",
         "src/types.ts",
       );
-      expect(suggestions).toContain("repograph query search_symbol MyInterface");
+      expect(suggestions).toContain("repograph query search MyInterface");
     });
 
     it("should handle dotted identifier names such as 'Foo.bar'", () => {
@@ -183,7 +182,7 @@ describe("suggestQueries", () => {
         "Property 'Foo.bar' does not exist on type 'Baz'.",
         "src/service.ts",
       );
-      expect(suggestions).toContain("repograph query search_symbol Foo.bar");
+      expect(suggestions).toContain("repograph query search Foo.bar");
     });
   });
 });

@@ -210,6 +210,55 @@ describe("resolveModulePath", () => {
     });
   });
 
+  describe("with knownFiles", () => {
+    const knownFiles = new Set([
+      "src/utils.ts",
+      "src/helpers/index.ts",
+      "src/components/Button.tsx",
+      "src/lib.js",
+    ]);
+
+    it("should resolve to .ts extension when file exists in knownFiles", () => {
+      const result = resolveModulePath("./utils", "src/main.ts", "typescript", knownFiles);
+      expect(result).toBe("src/utils.ts");
+    });
+
+    it("should resolve to .tsx extension when file exists in knownFiles", () => {
+      const result = resolveModulePath("./components/Button", "src/app.ts", "typescript", knownFiles);
+      expect(result).toBe("src/components/Button.tsx");
+    });
+
+    it("should resolve to index.ts when directory has index file", () => {
+      const result = resolveModulePath("./helpers", "src/app.ts", "typescript", knownFiles);
+      expect(result).toBe("src/helpers/index.ts");
+    });
+
+    it("should resolve to .js extension when file exists in knownFiles", () => {
+      const result = resolveModulePath("./lib", "src/main.ts", "typescript", knownFiles);
+      expect(result).toBe("src/lib.js");
+    });
+
+    it("should return original path when no match in knownFiles", () => {
+      const result = resolveModulePath("./missing", "src/main.ts", "typescript", knownFiles);
+      expect(result).toBe("src/missing");
+    });
+
+    it("should return exact path when already in knownFiles", () => {
+      const result = resolveModulePath("./utils.ts", "src/main.ts", "typescript", knownFiles);
+      expect(result).toBe("src/utils.ts");
+    });
+
+    it("should not resolve bare specifiers even with knownFiles", () => {
+      const result = resolveModulePath("lodash", "src/main.ts", "typescript", knownFiles);
+      expect(result).toBe("lodash");
+    });
+
+    it("should work without knownFiles (backward compat)", () => {
+      const result = resolveModulePath("./utils", "src/main.ts", "typescript");
+      expect(result).toBe("src/utils");
+    });
+  });
+
   describe("unknown language", () => {
     it("should return specifier unchanged for unsupported languages", () => {
       const result = resolveModulePath("std::io", "src/main.rs", "rust");

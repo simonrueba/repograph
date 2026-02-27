@@ -88,6 +88,7 @@ export async function runUpdate(args: string[]): Promise<void> {
     sourceFiles.map((f) => ({ path: f.path, hash: f.hash })),
   );
 
+  const knownFiles = new Set(sourceFiles.map((f) => f.path));
   const staleSet = new Set(staleFiles);
   const dirtyFiles = sourceFiles.filter((f) => staleSet.has(f.path));
 
@@ -105,7 +106,7 @@ export async function runUpdate(args: string[]): Promise<void> {
     const imports = extractImports(code, language);
     ctx.store.clearEdgesForFile(file.path);
     for (const imp of imports) {
-      const target = resolveModulePath(imp.specifier, file.path, language);
+      const target = resolveModulePath(imp.specifier, file.path, language, knownFiles);
       ctx.store.insertEdge({
         source: file.path,
         target,
@@ -128,7 +129,7 @@ export async function runUpdate(args: string[]): Promise<void> {
     const imports = extractImports(code, language);
     ctx.store.clearEdgesForFile(file.path);
     for (const imp of imports) {
-      const target = resolveModulePath(imp.specifier, file.path, language);
+      const target = resolveModulePath(imp.specifier, file.path, language, knownFiles);
       ctx.store.insertEdge({
         source: file.path,
         target,

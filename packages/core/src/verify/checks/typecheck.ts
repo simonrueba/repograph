@@ -83,8 +83,8 @@ function extractIdentifier(errorMessage: string): string | null {
  *
  * Suggestions follow this strategy:
  *  - Every error gets an `impact` suggestion for the file it lives in.
- *  - Common error codes get one or more `search_symbol` / `find_refs`
- *    suggestions based on identifiers extracted from the message text.
+ *  - Common error codes get one or more `search` suggestions based on
+ *    identifiers extracted from the message text.
  */
 export function suggestQueries(
   code: string,
@@ -105,7 +105,7 @@ export function suggestQueries(
     // Extract the function/parameter name from the message context.
     case "TS2345": {
       if (identifier) {
-        suggestions.push(`repograph query search_symbol ${identifier}`);
+        suggestions.push(`repograph query search ${identifier}`);
       }
       break;
     }
@@ -119,7 +119,7 @@ export function suggestQueries(
       // The missing export name is typically the last quoted token.
       const exportName = allNames.length > 1 ? allNames[allNames.length - 1] : identifier;
       if (exportName) {
-        suggestions.push(`repograph query search_symbol ${exportName}`);
+        suggestions.push(`repograph query search ${exportName}`);
       }
       break;
     }
@@ -127,7 +127,7 @@ export function suggestQueries(
     // TS2339 — Property 'X' does not exist on type 'Y'
     case "TS2339": {
       if (identifier) {
-        suggestions.push(`repograph query search_symbol ${identifier}`);
+        suggestions.push(`repograph query search ${identifier}`);
       }
       break;
     }
@@ -135,19 +135,15 @@ export function suggestQueries(
     // TS2304 — Cannot find name 'X'
     case "TS2304": {
       if (identifier) {
-        suggestions.push(`repograph query search_symbol ${identifier}`);
+        suggestions.push(`repograph query search ${identifier}`);
       }
       break;
     }
 
     // TS2322 — Type 'X' is not assignable to type 'Y'
-    // Suggest find_refs on the target variable in the erroring file.
     case "TS2322": {
-      if (file) {
-        suggestions.push(`repograph query find_refs ${file}`);
-      }
       if (identifier) {
-        suggestions.push(`repograph query search_symbol ${identifier}`);
+        suggestions.push(`repograph query search ${identifier}`);
       }
       break;
     }
