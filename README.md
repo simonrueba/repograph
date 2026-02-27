@@ -150,13 +150,13 @@ All hooks guard against missing `.repograph/` — they silently exit if the proj
 1. **Empty index** — fails if zero files are indexed (prevents vacuous pass on uninitialized projects)
 2. **Index freshness** — checks the dirty set (files marked changed by hooks or `update`), filtering to source files only. Fails if any dirty source files exist that haven't been covered by a SCIP index pass. Non-source files are ignored since SCIP can't index them.
 3. **Missing test runs** — checks the ledger for a `test_run` event after the most recent `edit`. Fails if no tests were run after editing.
-4. **Typecheck** — runs `tsc --noEmit` against the repo's `tsconfig.json`. Fails on any type errors. On failure, includes recommendations with `repograph query impact` commands for the top error files. Skipped if no `tsconfig.json` exists.
+4. **Typecheck** — runs `tsc --noEmit` against the repo's `tsconfig.json`. Fails on any type errors. On failure, includes recommendations with `repograph query impact` and `repograph query search` commands for the affected files and identifiers. Skipped if no `tsconfig.json` exists.
 
 ## How indexing works
 
 Two-pass pipeline:
 
-1. **Structural pass** (instant, per-file) — regex-based extraction of `import`/`export`/`from` statements, including side-effect imports (`import "module"`), dynamic imports (`import("module")`), and Python relative imports (`from . import`). Creates file-level `imports` edges. Runs on every `update`.
+1. **Structural pass** (instant, per-file) — regex-based extraction of `import`/`export`/`from` statements, including side-effect imports (`import "module"`), dynamic imports (`import("module")`), and Python relative imports (`from . import`). Creates file-level `imports` edges with resolved file paths (e.g. `./utils` → `src/utils.ts`) so edges point to actual file nodes. Runs on every `update`.
 2. **SCIP pass** (slower, full project) — runs `scip-typescript` or `scip-python` per detected sub-project, producing a protobuf index. The parser decodes it and extracts symbols, occurrences (with line:col ranges), and definition/reference roles. Creates symbol-level `defines` and `references` edges. Runs on `index`, `update` (when dirty source files exist), and `update --full` (forced).
 
 Both passes write to the same SQLite database (`.repograph/index.db`). The database uses WAL mode, `busy_timeout=5000` for concurrent access from hooks, and transactions for atomic SCIP ingestion. Bulk ingestion uses index-drop/recreate and `PRAGMA synchronous=OFF` for faster writes, and skips unchanged files by content hash comparison.
@@ -199,7 +199,7 @@ packages/
 
 ```bash
 bun install
-bun test                  # 300+ tests across 15 files
+bun test                  # 310+ tests across 15 files
 bunx tsc --noEmit         # type-check all packages
 bun run packages/cli/src/index.ts doctor  # check prerequisites
 ```
