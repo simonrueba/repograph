@@ -41,21 +41,30 @@ export function checkBoundaries(
 
   const issues: BoundaryIssue[] = [];
 
-  // Build a mapping from path prefix to layer name
-  const layerEntries = Object.entries(config.layers);
+  // Build sorted layer prefixes (longest first) for early-exit matching.
+  // Sorting by descending length means the first match is always the most
+  // specific, eliminating the need to scan all layers per file.
+  const sortedLayers = Object.entries(config.layers)
+    .map(([name, def]) => ({
+      name,
+      prefix: def.path.endsWith("/") ? def.path : def.path + "/",
+    }))
+    .sort((a, b) => b.prefix.length - a.prefix.length);
 
-  // Find which layer a file belongs to
+  // Layer lookup cache: file path → layer name (or null)
+  const layerCache = new Map<string, string | null>();
+
   function getLayer(filePath: string): string | null {
-    let bestMatch: string | null = null;
-    let bestLen = 0;
-    for (const [name, def] of layerEntries) {
-      const prefix = def.path.endsWith("/") ? def.path : def.path + "/";
-      if (filePath.startsWith(prefix) && prefix.length > bestLen) {
-        bestMatch = name;
-        bestLen = prefix.length;
+    const cached = layerCache.get(filePath);
+    if (cached !== undefined) return cached;
+    for (const layer of sortedLayers) {
+      if (filePath.startsWith(layer.prefix)) {
+        layerCache.set(filePath, layer.name);
+        return layer.name;
       }
     }
-    return bestMatch;
+    layerCache.set(filePath, null);
+    return null;
   }
 
   // Fetch all import edges in a single query instead of N per-file queries

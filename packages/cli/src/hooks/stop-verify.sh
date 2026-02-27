@@ -10,24 +10,23 @@ cd "$REPO_ROOT"
 # Read stdin (hook input JSON)
 INPUT=$(cat)
 
-# Check stop_hook_active from stdin — prevent infinite loops
-if echo "$INPUT" | grep -q '"stop_hook_active":true'; then
-  exit 0
-fi
+# Check stop_hook_active from stdin using native bash — prevent infinite loops
+tmp="${INPUT#*\"stop_hook_active\":}"
+stop_val="${tmp%%[,\}]*}"
+[[ "$stop_val" == "true" ]] && exit 0
 
-# Resolve ariadne binary: PATH > node_modules/.bin > bun run fallback
-resolve_bin() {
-  if command -v ariadne >/dev/null 2>&1; then
-    echo "ariadne"
-  elif [ -x "node_modules/.bin/ariadne" ]; then
-    echo "node_modules/.bin/ariadne"
-  elif [ -f "packages/cli/src/index.ts" ]; then
-    echo "bun run packages/cli/src/index.ts"
-  else
-    echo "ariadne"
-  fi
-}
-BIN="$(resolve_bin)"
+# Resolve ariadne binary (cached via env var)
+if [ -n "$ARIADNE_BIN" ]; then
+  BIN="$ARIADNE_BIN"
+elif command -v ariadne >/dev/null 2>&1; then
+  BIN="ariadne"
+elif [ -x "node_modules/.bin/ariadne" ]; then
+  BIN="node_modules/.bin/ariadne"
+elif [ -f "packages/cli/src/index.ts" ]; then
+  BIN="bun run packages/cli/src/index.ts"
+else
+  BIN="ariadne"
+fi
 
 # Atomic lock via mkdir (fails if directory already exists = another hook is running)
 LOCK_DIR=".ariadne/.stop_lock"

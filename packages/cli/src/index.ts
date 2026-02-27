@@ -54,11 +54,16 @@ async function main() {
       runDoctor(args.slice(1));
       break;
     }
+    case "post-edit": {
+      const { runPostEdit } = await import("./commands/post-edit");
+      runPostEdit(args.slice(1));
+      break;
+    }
     default: {
       const { outputError } = await import("./lib/output");
       outputError(
         "UNKNOWN_COMMAND",
-        `Unknown command: ${command}. Usage: ariadne <setup|init|index|update|query|verify|ledger|status|dirty|doctor>`,
+        `Unknown command: ${command}. Usage: ariadne <setup|init|index|update|query|verify|ledger|status|dirty|doctor|post-edit>`,
       );
     }
   }

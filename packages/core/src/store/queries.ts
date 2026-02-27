@@ -107,6 +107,27 @@ export class StoreQueries {
       .all() as FileRecord[];
   }
 
+  /** Lightweight query returning only file paths (no hash/language/timestamp). */
+  getFilePaths(): Set<string> {
+    const rows = this.db
+      .query("SELECT path FROM files")
+      .all() as { path: string }[];
+    return new Set(rows.map((r) => r.path));
+  }
+
+  getFileCount(): number {
+    return (
+      this.db.query("SELECT COUNT(*) as count FROM files").get() as { count: number }
+    ).count;
+  }
+
+  getLastIndexedAt(): number {
+    const row = this.db
+      .query("SELECT MAX(indexed_at) as max_ts FROM files")
+      .get() as { max_ts: number | null } | null;
+    return row?.max_ts ?? 0;
+  }
+
   findStaleFiles(entries: { path: string; hash: string }[]): string[] {
     const stale: string[] = [];
     const stmt = this.db.query("SELECT hash FROM files WHERE path = ?1");
@@ -227,6 +248,24 @@ export class StoreQueries {
     return map;
   }
 
+  /**
+   * Batch-fetch files by paths. Returns a Map for O(1) lookup.
+   * Uses a cached prepared statement in a loop (faster than dynamic IN clause
+   * which forces SQLite to recompile for each unique placeholder count).
+   */
+  getFilesBatch(paths: string[]): Map<string, FileRecord> {
+    if (paths.length === 0) return new Map();
+    const stmt = this.db.query(
+      "SELECT path, language, hash, indexed_at FROM files WHERE path = ?1",
+    );
+    const map = new Map<string, FileRecord>();
+    for (const p of paths) {
+      const row = stmt.get(p) as FileRecord | null;
+      if (row) map.set(row.path, row);
+    }
+    return map;
+  }
+
   getSymbolsByFile(filePath: string): SymbolRecord[] {
     return this.db
       .query(
@@ -310,6 +349,23 @@ export class StoreQueries {
   }
 
   /**
+   * Batch-fetch edges by multiple targets using a cached prepared statement.
+   * Uses stmt loop instead of dynamic IN clause (avoids recompilation per unique count).
+   */
+  getEdgesByTargetBatch(targets: string[]): EdgeRecord[] {
+    if (targets.length === 0) return [];
+    const stmt = this.db.query(
+      "SELECT source, target, kind, confidence FROM edges WHERE target = ?1",
+    );
+    const results: EdgeRecord[] = [];
+    for (const t of targets) {
+      const rows = stmt.all(t) as EdgeRecord[];
+      results.push(...rows);
+    }
+    return results;
+  }
+
+  /**
    * Batch-insert edges using a single cached prepared statement.
    * Bun SQLite caches compiled statements, making stmt.run() in a loop
    * faster than multi-row INSERT (which rebuilds SQL per chunk).
@@ -325,11 +381,20 @@ export class StoreQueries {
     }
   }
 
-  /** Fetch all import edges in a single query (for boundary checks). */
+  /** Fetch all import edges in a single query. */
   getImportEdges(): EdgeRecord[] {
     return this.db
       .query(
         "SELECT source, target, kind, confidence FROM edges WHERE kind = 'imports'",
+      )
+      .all() as EdgeRecord[];
+  }
+
+  /** Fetch all export edges in a single query. */
+  getExportEdges(): EdgeRecord[] {
+    return this.db
+      .query(
+        "SELECT source, target, kind, confidence FROM edges WHERE kind = 'exports'",
       )
       .all() as EdgeRecord[];
   }
