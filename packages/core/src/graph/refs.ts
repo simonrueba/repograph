@@ -1,6 +1,5 @@
 import type { StoreQueries } from "../store/queries";
-import { readFileSync } from "fs";
-import { join } from "path";
+import { unpackRange, formatRange, getSnippet } from "./utils";
 
 // ── Result types ──────────────────────────────────────────────────────
 
@@ -34,37 +33,10 @@ export interface RefResult {
   snippet?: string;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────
-
-/** Unpack (line << 16 | col) into {line, col} */
-function unpackRange(packed: number): { line: number; col: number } {
-  return { line: packed >> 16, col: packed & 0xffff };
-}
-
-function formatRange(
-  start: number,
-  end: number,
-): { startLine: number; startCol: number; endLine: number; endCol: number } {
-  const s = unpackRange(start);
-  const e = unpackRange(end);
-  return { startLine: s.line, startCol: s.col, endLine: e.line, endCol: e.col };
-}
-
-/** Read up to 3 lines of code starting at startLine for a snippet. */
-function getSnippet(
-  repoRoot: string,
-  filePath: string,
-  startLine: number,
-): string | undefined {
-  try {
-    const content = readFileSync(join(repoRoot, filePath), "utf-8");
-    const lines = content.split("\n");
-    return lines
-      .slice(Math.max(0, startLine), Math.min(lines.length, startLine + 3))
-      .join("\n");
-  } catch {
-    return undefined;
-  }
+export interface CallGraphResult {
+  root: string;
+  callers: { id: string; name: string; filePath?: string }[];
+  callees: { id: string; name: string; filePath?: string }[];
 }
 
 // ── GraphQueries ──────────────────────────────────────────────────────
@@ -139,5 +111,44 @@ export class GraphQueries {
         snippet: getSnippet(this.repoRoot, o.file_path, range.startLine),
       };
     });
+  }
+
+  /** Get the call graph for a symbol: who calls it and what it calls. */
+  getCallGraph(symbolId: string, depth = 1): CallGraphResult {
+    const callers: CallGraphResult["callers"] = [];
+    const callees: CallGraphResult["callees"] = [];
+    const seenCallers = new Set<string>();
+    const seenCallees = new Set<string>();
+
+    const collectCallers = (id: string, remaining: number) => {
+      if (remaining <= 0) return;
+      for (const edge of this.store.getCallers(id)) {
+        if (seenCallers.has(edge.source)) continue;
+        seenCallers.add(edge.source);
+        const sym = this.store.getSymbol(edge.source);
+        if (sym) {
+          callers.push({ id: sym.id, name: sym.name, filePath: sym.file_path ?? undefined });
+          collectCallers(sym.id, remaining - 1);
+        }
+      }
+    };
+
+    const collectCallees = (id: string, remaining: number) => {
+      if (remaining <= 0) return;
+      for (const edge of this.store.getCallees(id)) {
+        if (seenCallees.has(edge.target)) continue;
+        seenCallees.add(edge.target);
+        const sym = this.store.getSymbol(edge.target);
+        if (sym) {
+          callees.push({ id: sym.id, name: sym.name, filePath: sym.file_path ?? undefined });
+          collectCallees(sym.id, remaining - 1);
+        }
+      }
+    };
+
+    collectCallers(symbolId, depth);
+    collectCallees(symbolId, depth);
+
+    return { root: symbolId, callers, callees };
   }
 }

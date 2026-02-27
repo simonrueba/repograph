@@ -1,11 +1,31 @@
 import type { StoreQueries } from "../store/queries";
 import { basename } from "path";
+import { getSnippet, formatRange } from "./utils";
 
 export interface ImpactResult {
   changedSymbols: { id: string; name: string; filePath: string }[];
   dependentFiles: { path: string; reason: string }[];
   recommendedTests: { command: string; reason: string }[];
   unresolvedRefs: { symbolId: string; filePath: string }[];
+}
+
+export interface SymbolDetail {
+  id: string;
+  name: string;
+  kind?: string;
+  doc?: string;
+  snippet?: string;
+}
+
+export interface KeyRef {
+  symbolName: string;
+  filePath: string;
+  snippet?: string;
+}
+
+export interface DetailedImpactResult extends ImpactResult {
+  symbolDetails: SymbolDetail[];
+  keyRefs: KeyRef[];
 }
 
 const TEST_PATTERNS = [
@@ -106,5 +126,45 @@ export class ImpactAnalyzer {
     }
 
     return { changedSymbols, dependentFiles, recommendedTests, unresolvedRefs: [] };
+  }
+
+  computeDetailedImpact(changedPaths: string[]): DetailedImpactResult {
+    const base = this.computeImpact(changedPaths);
+
+    const symbolDetails: SymbolDetail[] = [];
+    const keyRefs: KeyRef[] = [];
+
+    for (const cs of base.changedSymbols) {
+      const sym = this.store.getSymbol(cs.id);
+      if (sym) {
+        const range = formatRange(sym.range_start, sym.range_end);
+        const snippet = getSnippet(this.repoRoot, cs.filePath, range.startLine);
+        symbolDetails.push({
+          id: sym.id,
+          name: sym.name,
+          kind: sym.kind ?? undefined,
+          doc: sym.doc ?? undefined,
+          snippet,
+        });
+      }
+
+      // Collect up to 3 non-definition references
+      const refs = this.store.getOccurrencesBySymbol(cs.id);
+      let count = 0;
+      for (const occ of refs) {
+        if (count >= 3) break;
+        if (occ.roles & 1) continue; // skip definitions
+        const range = formatRange(occ.range_start, occ.range_end);
+        const snippet = getSnippet(this.repoRoot, occ.file_path, range.startLine);
+        keyRefs.push({
+          symbolName: cs.name,
+          filePath: occ.file_path,
+          snippet,
+        });
+        count++;
+      }
+    }
+
+    return { ...base, symbolDetails, keyRefs };
   }
 }

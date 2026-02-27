@@ -296,6 +296,22 @@ export class StoreQueries {
     }
   }
 
+  getCallees(symbolId: string): EdgeRecord[] {
+    return this.db
+      .query(
+        "SELECT source, target, kind, confidence FROM edges WHERE source = ?1 AND kind = 'calls'",
+      )
+      .all(symbolId) as EdgeRecord[];
+  }
+
+  getCallers(symbolId: string): EdgeRecord[] {
+    return this.db
+      .query(
+        "SELECT source, target, kind, confidence FROM edges WHERE target = ?1 AND kind = 'calls'",
+      )
+      .all(symbolId) as EdgeRecord[];
+  }
+
   clearEdgesForFile(source: string): void {
     this.db.query("DELETE FROM edges WHERE source = ?1").run(source);
   }

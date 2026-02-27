@@ -139,12 +139,20 @@ server.registerTool(
       paths: z
         .array(z.string())
         .describe("Array of changed file paths relative to repo root"),
+      details: z
+        .boolean()
+        .optional()
+        .describe("When true, include symbol definitions, docs, and key reference snippets"),
     },
     annotations: READ_ONLY,
   },
-  async ({ paths }) => {
+  async ({ paths, details }) => {
     try {
-      return ok(impact.computeImpact(paths));
+      return ok(
+        details
+          ? impact.computeDetailedImpact(paths)
+          : impact.computeImpact(paths),
+      );
     } catch (e: unknown) {
       return err(toErrorMessage(e));
     }
@@ -272,6 +280,27 @@ server.registerTool(
           0,
         ),
       });
+    } catch (e: unknown) {
+      return err(toErrorMessage(e));
+    }
+  },
+);
+
+// Tool 9: call_graph
+server.registerTool(
+  "repograph.call_graph",
+  {
+    title: "Call Graph",
+    description: "Get the approximate call graph for a symbol: which functions call it (callers) and which functions it calls (callees).",
+    inputSchema: {
+      symbolId: z.string().describe("The symbol ID (SCIP-style identifier)"),
+      depth: z.number().optional().describe("How many levels to traverse (default 1)"),
+    },
+    annotations: READ_ONLY,
+  },
+  async ({ symbolId, depth }) => {
+    try {
+      return ok(graph.getCallGraph(symbolId, depth ?? 1));
     } catch (e: unknown) {
       return err(toErrorMessage(e));
     }

@@ -108,15 +108,18 @@ export async function runQuery(args: string[]): Promise<void> {
       }
 
       case "impact": {
+        const details = cleanArgs.includes("--details");
         const files = cleanArgs.slice(1).filter((a) => !a.startsWith("--"));
         if (files.length === 0) {
           outputError(
             "MISSING_ARGUMENT",
-            "Usage: repograph query impact <file1> [file2] ... [--root <path>]",
+            "Usage: repograph query impact <file1> [file2] ... [--details] [--root <path>]",
           );
         }
         const analyzer = new ImpactAnalyzer(ctx.store, ctx.repoRoot);
-        const result = analyzer.computeImpact(files);
+        const result = details
+          ? analyzer.computeDetailedImpact(files)
+          : analyzer.computeImpact(files);
         output("query.impact", { result });
         break;
       }
@@ -160,6 +163,22 @@ export async function runQuery(args: string[]): Promise<void> {
         const result = modules.getSymbolGraph(symbolId, maxNodes);
 
         emitGraph(result, format, modules, "query.symbol-graph");
+        break;
+      }
+
+      case "call-graph": {
+        const depthRaw = extractFlag(cleanArgs, "--depth");
+        cleanArgs = stripFlag(cleanArgs, "--depth");
+        const symbolId = cleanArgs[1];
+        if (!symbolId) {
+          outputError(
+            "MISSING_ARGUMENT",
+            "Usage: repograph query call-graph <symbol-id> [--depth N] [--root <path>]",
+          );
+        }
+        const depth = depthRaw ? parseInt(depthRaw, 10) : 1;
+        const result = graph.getCallGraph(symbolId, depth);
+        output("query.call-graph", { result });
         break;
       }
 
