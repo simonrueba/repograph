@@ -219,6 +219,7 @@ export class ScipParser {
         hash: fileHashes?.get(filePath) ?? existingFile?.hash ?? "",
       });
       store.clearOccurrencesForFile(filePath);
+      store.clearSemanticEdgesForFile(filePath);
       filesIngested++;
 
       // Process symbol information (documentation, kinds) — batch upsert

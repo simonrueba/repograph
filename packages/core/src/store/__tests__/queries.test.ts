@@ -559,4 +559,100 @@ describe("StoreQueries", () => {
       expect(project!.project_id).toBe("packages/core");
     });
   });
+
+  // ── clearSemanticEdgesForFile ──────────────────────────────────────
+
+  describe("clearSemanticEdgesForFile", () => {
+    it("should remove defines and references edges for a file", () => {
+      queries.insertEdge({ source: "src/foo.ts", target: "sym:add", kind: "defines", confidence: "high" });
+      queries.insertEdge({ source: "src/foo.ts", target: "sym:bar", kind: "references", confidence: "high" });
+      queries.insertEdge({ source: "src/foo.ts", target: "src/utils.ts", kind: "imports", confidence: "structural" });
+
+      queries.clearSemanticEdgesForFile("src/foo.ts");
+
+      const remaining = queries.getEdgesBySource("src/foo.ts");
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].kind).toBe("imports");
+    });
+
+    it("should remove calls edges originating from symbols defined in the file", () => {
+      queries.upsertSymbol({ id: "sym:add", name: "add", kind: "function", file_path: "src/math.ts" });
+      queries.upsertSymbol({ id: "sym:mul", name: "mul", kind: "function", file_path: "src/math.ts" });
+      queries.upsertSymbol({ id: "sym:log", name: "log", kind: "function", file_path: "src/utils.ts" });
+
+      queries.insertEdge({ source: "sym:add", target: "sym:log", kind: "calls", confidence: "approximate" });
+      queries.insertEdge({ source: "sym:mul", target: "sym:log", kind: "calls", confidence: "approximate" });
+      queries.insertEdge({ source: "sym:log", target: "sym:add", kind: "calls", confidence: "approximate" });
+
+      queries.clearSemanticEdgesForFile("src/math.ts");
+
+      // Calls FROM sym:add and sym:mul (defined in math.ts) should be gone
+      expect(queries.getCallees("sym:add")).toHaveLength(0);
+      expect(queries.getCallees("sym:mul")).toHaveLength(0);
+      // Calls FROM sym:log (defined in utils.ts) should remain
+      expect(queries.getCallees("sym:log")).toHaveLength(1);
+    });
+
+    it("should not affect edges for other files", () => {
+      queries.insertEdge({ source: "src/a.ts", target: "sym:x", kind: "defines" });
+      queries.insertEdge({ source: "src/b.ts", target: "sym:y", kind: "defines" });
+
+      queries.clearSemanticEdgesForFile("src/a.ts");
+
+      expect(queries.getEdgesBySource("src/a.ts")).toHaveLength(0);
+      expect(queries.getEdgesBySource("src/b.ts")).toHaveLength(1);
+    });
+  });
+
+  // ── clearDirtyByPrefix ────────────────────────────────────────────
+
+  describe("clearDirtyByPrefix", () => {
+    it("should clear dirty only for files matching the prefix", () => {
+      queries.markDirty("packages/core/src/a.ts");
+      queries.markDirty("packages/core/src/b.ts");
+      queries.markDirty("packages/cli/src/c.ts");
+
+      queries.clearDirtyByPrefix("packages/core");
+
+      const dirty = queries.getDirtyPaths().map((d) => d.path);
+      expect(dirty).toEqual(["packages/cli/src/c.ts"]);
+    });
+
+    it("should handle prefix with trailing slash", () => {
+      queries.markDirty("packages/core/src/a.ts");
+      queries.markDirty("packages/cli/src/b.ts");
+
+      queries.clearDirtyByPrefix("packages/core/");
+
+      const dirty = queries.getDirtyPaths().map((d) => d.path);
+      expect(dirty).toEqual(["packages/cli/src/b.ts"]);
+    });
+
+    it("should clear all dirty when prefix is '.'", () => {
+      queries.markDirty("src/a.ts");
+      queries.markDirty("src/b.ts");
+
+      queries.clearDirtyByPrefix(".");
+
+      expect(queries.getDirtyCount()).toBe(0);
+    });
+
+    it("should clear all dirty when prefix is empty", () => {
+      queries.markDirty("src/a.ts");
+
+      queries.clearDirtyByPrefix("");
+
+      expect(queries.getDirtyCount()).toBe(0);
+    });
+
+    it("should not clear files that only partially match the prefix", () => {
+      queries.markDirty("packages/core-extra/src/a.ts");
+      queries.markDirty("packages/core/src/b.ts");
+
+      queries.clearDirtyByPrefix("packages/core");
+
+      const dirty = queries.getDirtyPaths().map((d) => d.path);
+      expect(dirty).toEqual(["packages/core-extra/src/a.ts"]);
+    });
+  });
 });

@@ -238,10 +238,11 @@ export async function runUpdate(args: string[]): Promise<void> {
 
   // Run SCIP indexers when dirty source files exist or --full forces it
   const indexerResults: { indexer: string; result: unknown }[] = [];
+  const succeededProjectIds = new Set<string>();
   const hasDirtySourceFiles = ctx.store.getDirtyPaths().length > 0;
+  const projects = detectProjects(ctx.repoRoot);
 
   if (useFull || hasDirtySourceFiles) {
-    const projects = detectProjects(ctx.repoRoot);
     const tsIndexer = new ScipTypescriptIndexer();
     const pyIndexer = new ScipPythonIndexer();
 
@@ -281,6 +282,7 @@ export async function runUpdate(args: string[]): Promise<void> {
         indexer: indexer.name,
         result: { ...result, ...ingested, projectId },
       });
+      succeededProjectIds.add(projectId ?? ".");
       if (projectId) {
         ctx.store.setProjectIndexTs(projectId, Date.now());
       }
@@ -363,11 +365,21 @@ export async function runUpdate(args: string[]): Promise<void> {
     }
   }
 
-  // Record full SCIP index timestamp and clear dirty set on successful SCIP run
+  // Record full SCIP index timestamp and clear dirty set per successful project.
+  // Only clear dirty flags for projects that actually indexed successfully —
+  // a failed project keeps its dirty flags so the next run retries it.
   const scipRan = useFull || hasDirtySourceFiles;
-  if (scipRan && indexerResults.some((r) => !("error" in (r.result as any)))) {
+  if (scipRan && succeededProjectIds.size > 0) {
     ctx.store.setMeta("last_full_scip_index_ts", String(Date.now()));
-    ctx.store.clearAllDirty();
+    if (projects.length === 0) {
+      // Single-project repo: clear all dirty
+      ctx.store.clearAllDirty();
+    } else {
+      // Multi-project: clear dirty only for files in successful projects
+      for (const projectId of succeededProjectIds) {
+        ctx.store.clearDirtyByPrefix(projectId);
+      }
+    }
   }
 
   // ── Artifact indexing ────────────────────────────────────────────────
