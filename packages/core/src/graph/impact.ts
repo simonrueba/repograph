@@ -69,8 +69,17 @@ export class ImpactAnalyzer {
 
     // 3. Find files that import changed files (structural edges)
     for (const path of changedPaths) {
+      // Try both the exact path (resolved with extension) and the
+      // extensionless form (legacy edges created before knownFiles resolution).
       const moduleName = path.replace(/\.[^.]+$/, "");
-      const importers = this.store.getEdgesByTarget(moduleName);
+      const importersByModule = this.store.getEdgesByTarget(moduleName);
+      const importersByPath = path !== moduleName ? this.store.getEdgesByTarget(path) : [];
+      const seen = new Set<string>();
+      const importers = [...importersByModule, ...importersByPath].filter((e) => {
+        if (seen.has(e.source)) return false;
+        seen.add(e.source);
+        return true;
+      });
       for (const edge of importers) {
         if (
           !changedPaths.includes(edge.source) &&

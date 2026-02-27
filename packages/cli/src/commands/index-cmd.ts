@@ -68,6 +68,7 @@ export async function runIndex(args: string[]): Promise<void> {
   const sourceFiles = walkSourceFiles(ctx.repoRoot, ctx.repoRoot);
 
   // Register all files and extract structural imports
+  const knownFiles = new Set(sourceFiles.map((f) => f.path));
   const fileHashes = new Map<string, string>();
   for (const file of sourceFiles) {
     const content = readFileSync(file.fullPath);
@@ -82,7 +83,7 @@ export async function runIndex(args: string[]): Promise<void> {
     const imports = extractImports(code, language);
     ctx.store.clearEdgesForFile(file.path);
     for (const imp of imports) {
-      const target = resolveModulePath(imp.specifier, file.path, language);
+      const target = resolveModulePath(imp.specifier, file.path, language, knownFiles);
       ctx.store.insertEdge({
         source: file.path,
         target,

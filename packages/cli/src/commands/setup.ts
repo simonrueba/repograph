@@ -52,7 +52,7 @@ export async function runSetup(args: string[]): Promise<void> {
   const hooksDir = join(repographDir, "hooks");
   mkdirSync(hooksDir, { recursive: true });
   const srcHooksDir = join(import.meta.dir, "..", "hooks");
-  for (const hookFile of ["post-edit.sh", "post-test.sh", "stop-verify.sh"]) {
+  for (const hookFile of ["post-edit.sh", "post-test.sh", "stop-verify.sh", "pre-edit-impact.sh"]) {
     const src = join(srcHooksDir, hookFile);
     const dest = join(hooksDir, hookFile);
     if (existsSync(src)) {
@@ -105,6 +105,17 @@ export async function runSetup(args: string[]): Promise<void> {
 function generateHooksConfig(): object {
   return {
     hooks: {
+      PreToolUse: [
+        {
+          matcher: "Edit|Write",
+          hooks: [
+            {
+              type: "command",
+              command: "bash .repograph/hooks/pre-edit-impact.sh",
+            },
+          ],
+        },
+      ],
       PostToolUse: [
         {
           matcher: "Edit|Write",

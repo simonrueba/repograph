@@ -67,15 +67,31 @@ export function extractImports(
   return imports;
 }
 
+const TS_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
+const TS_INDEX_SUFFIXES = TS_EXTENSIONS.map((ext) => `/index${ext}`);
+
 export function resolveModulePath(
   specifier: string,
   fromFile: string,
   language: string,
+  knownFiles?: Set<string>,
 ): string {
   if (language === "typescript" || language === "javascript") {
     if (specifier.startsWith(".")) {
       const dir = dirname(fromFile);
-      return normalize(join(dir, specifier));
+      const resolved = normalize(join(dir, specifier));
+
+      // If knownFiles provided, try to resolve to an actual file with extension
+      if (knownFiles && !knownFiles.has(resolved)) {
+        for (const ext of TS_EXTENSIONS) {
+          if (knownFiles.has(resolved + ext)) return resolved + ext;
+        }
+        for (const suffix of TS_INDEX_SUFFIXES) {
+          if (knownFiles.has(resolved + suffix)) return resolved + suffix;
+        }
+      }
+
+      return resolved;
     }
     return specifier; // bare specifier (external package)
   }
