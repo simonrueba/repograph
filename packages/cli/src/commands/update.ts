@@ -76,19 +76,67 @@ function fileInProject(filePath: string, projectRoot: string): boolean {
   return filePath.startsWith(normalized);
 }
 
+/**
+ * Parse --files flag: collects all args after --files until the next flag or end.
+ * Returns the file paths, or null if --files was not provided.
+ */
+function parseFilesFlag(args: string[]): string[] | null {
+  const idx = args.indexOf("--files");
+  if (idx === -1) return null;
+  const files: string[] = [];
+  for (let i = idx + 1; i < args.length; i++) {
+    if (args[i].startsWith("--")) break;
+    files.push(args[i]);
+  }
+  return files.length > 0 ? files : null;
+}
+
+/**
+ * Targeted update: process only the specified files instead of walking the
+ * entire repo tree. Used by the post-edit hook for fast single-file updates.
+ */
+function processTargetedFiles(
+  filePaths: string[],
+  repoRoot: string,
+): { path: string; fullPath: string; ext: string; hash: string }[] {
+  const results: { path: string; fullPath: string; ext: string; hash: string }[] = [];
+  for (const filePath of filePaths) {
+    const fullPath = filePath.startsWith("/") ? filePath : join(repoRoot, filePath);
+    if (!existsSync(fullPath)) continue;
+    const ext = extname(fullPath);
+    if (!SOURCE_EXTENSIONS.has(ext)) continue;
+    const content = readFileSync(fullPath);
+    const hash = hashContent(content);
+    const relPath = relative(repoRoot, fullPath);
+    results.push({ path: relPath, fullPath, ext, hash });
+  }
+  return results;
+}
+
 export async function runUpdate(args: string[]): Promise<void> {
   const useFull = args.includes("--full");
-  const rootArg = args.find((a) => !a.startsWith("--"));
+  const targetedFiles = parseFilesFlag(args);
+  const fileSet = new Set(targetedFiles ?? []);
+  const rootArg = args.find((a) => !a.startsWith("--") && !fileSet.has(a));
   const ctx = getContext(rootArg);
 
-  const sourceFiles = walkSourceFiles(ctx.repoRoot, ctx.repoRoot);
+  // When --files is provided, only process those files (fast path for hooks).
+  // Otherwise, walk the entire repo (full scan).
+  const sourceFiles = targetedFiles
+    ? processTargetedFiles(targetedFiles, ctx.repoRoot)
+    : walkSourceFiles(ctx.repoRoot, ctx.repoRoot);
 
   // Find stale files by hash comparison
   const staleFiles = ctx.store.findStaleFiles(
     sourceFiles.map((f) => ({ path: f.path, hash: f.hash })),
   );
 
-  const knownFiles = new Set(sourceFiles.map((f) => f.path));
+  // Build knownFiles from DB when doing targeted update (avoids full walk),
+  // or from the walked source files for full scan.
+  const knownFiles = targetedFiles
+    ? new Set(ctx.store.getAllFiles().map((f) => f.path))
+    : new Set(sourceFiles.map((f) => f.path));
+
   const staleSet = new Set(staleFiles);
   const dirtyFiles = sourceFiles.filter((f) => staleSet.has(f.path));
 
@@ -116,10 +164,10 @@ export async function runUpdate(args: string[]): Promise<void> {
     }
   }
 
-  // Also register any completely new files
-  const newFiles = sourceFiles.filter(
-    (f) => !staleSet.has(f.path) && !ctx.store.getFile(f.path),
-  );
+  // Also register any completely new files (only relevant for full scan)
+  const newFiles = targetedFiles
+    ? sourceFiles.filter((f) => !staleSet.has(f.path) && !ctx.store.getFile(f.path))
+    : sourceFiles.filter((f) => !staleSet.has(f.path) && !ctx.store.getFile(f.path));
   for (const file of newFiles) {
     const language = languageFromExt(file.ext);
     ctx.store.upsertFile({ path: file.path, language, hash: file.hash });
@@ -169,8 +217,16 @@ export async function runUpdate(args: string[]): Promise<void> {
 
       const parser = new ScipParser();
       const index = await parser.parse(result.scipFilePath);
-      // Build file hash map for skip-unchanged; use bulk mode for full reindexes
+      // Build file hash map for skip-unchanged; use bulk mode for full reindexes.
+      // For targeted updates, include hashes from the DB for files not in sourceFiles.
       const fileHashes = new Map(sourceFiles.map((f) => [f.path, f.hash]));
+      if (targetedFiles) {
+        for (const dbFile of ctx.store.getAllFiles()) {
+          if (!fileHashes.has(dbFile.path)) {
+            fileHashes.set(dbFile.path, dbFile.hash);
+          }
+        }
+      }
       const ingested = parser.ingest(index, ctx.store, ctx.repoRoot, projectId, {
         fileHashes,
         bulk: true,

@@ -83,7 +83,7 @@ All commands output JSON. Symbol IDs are SCIP symbol strings returned by `search
 | `setup [path] [--quick]` | One-command setup: init + index + generate hooks & MCP config. `--quick` skips SCIP. |
 | `init [path]` | Create `.repograph/` directory and SQLite database |
 | `index [path] [--structural-only]` | Full index: structural imports + SCIP analysis. `--structural-only` skips SCIP. |
-| `update [--full]` | Incremental update: structural imports + auto SCIP when dirty source files exist. `--full` forces SCIP even when clean. |
+| `update [--full] [--files path...]` | Incremental update: structural imports + auto SCIP when dirty source files exist. `--files` processes only the specified files (used by hooks for fast single-file updates). `--full` forces SCIP even when clean. |
 | `query search <query>` | Fuzzy search symbols by name |
 | `query def <symbol-id>` | Get definition location, docs, and code snippet |
 | `query refs <symbol-id>` | Find all references across the codebase |
@@ -135,7 +135,7 @@ The MCP server starts gracefully even if `.repograph/` doesn't exist yet — it 
 ### What the hooks do
 
 - **Pre-edit impact hook** (`Edit|Write` PreToolUse): runs `repograph impact` before every source file edit and injects the blast radius (changed symbols, dependent files, recommended tests) as context so Claude sees what will be affected. Silently skips test files, non-source files, and uninitialized projects. ~240ms latency.
-- **Post-edit hook** (`Edit|Write` PostToolUse): marks edited source files (`.ts/.tsx/.js/.jsx/.py`) dirty, runs `repograph update`, logs the edit to the ledger. Non-source files (README, config, etc.) are skipped to avoid false-positive freshness failures.
+- **Post-edit hook** (`Edit|Write` PostToolUse): marks edited source files (`.ts/.tsx/.js/.jsx/.py`) dirty, runs `repograph update --files <path>` for fast single-file updates (no full repo walk), logs the edit to the ledger. Non-source files (README, config, etc.) are skipped to avoid false-positive freshness failures.
 - **Post-test hook** (`Bash` PostToolUse): detects test runner commands (vitest, jest, pytest, bun test, mocha, ava, cargo test, go test, playwright), logs `test_run` to the ledger
 - **Stop hook**: runs `repograph update` (auto-triggers SCIP when dirty source files exist), then `repograph verify`. On failure, outputs `{"decision":"block","reason":"..."}` to prevent Claude from stopping until issues are fixed
 
