@@ -59,12 +59,8 @@ echo $$ > "$LOCK_DIR/pid"
 cleanup() { rm -rf "$LOCK_DIR"; }
 trap cleanup EXIT
 
-# Run update — only full SCIP re-index if there are dirty files
-UPDATE_OUTPUT=$($BIN update 2>/dev/null) || true
-STALE_COUNT=$(echo "$UPDATE_OUTPUT" | grep -o '"staleFiles":[0-9]*' | grep -o '[0-9]*' || echo "0")
-if [ "$STALE_COUNT" -gt 0 ]; then
-  $BIN update --full 2>/dev/null || true
-fi
+# Run update — auto-triggers SCIP when dirty source files exist
+$BIN update 2>/dev/null || true
 
 VERIFY_OUTPUT=$($BIN verify 2>&1) || true
 
