@@ -316,6 +316,24 @@ export class StoreQueries {
     this.db.query("DELETE FROM edges WHERE source = ?1").run(source);
   }
 
+  /**
+   * Clear semantic edges produced by SCIP ingestion for a specific file.
+   * - Deletes `defines` and `references` edges where `source = filePath`
+   * - Deletes `calls` edges originating from symbols defined in this file
+   *
+   * This prevents edge bloat when re-ingesting the same file multiple times.
+   */
+  clearSemanticEdgesForFile(filePath: string): void {
+    this.db
+      .query("DELETE FROM edges WHERE source = ?1 AND kind IN ('defines', 'references')")
+      .run(filePath);
+    this.db
+      .query(
+        "DELETE FROM edges WHERE kind = 'calls' AND source IN (SELECT id FROM symbols WHERE file_path = ?1)",
+      )
+      .run(filePath);
+  }
+
   clearAllEdges(): void {
     this.db.exec("DELETE FROM edges");
   }
@@ -380,6 +398,20 @@ export class StoreQueries {
 
   clearAllDirty(): void {
     this.db.exec("DELETE FROM dirty");
+  }
+
+  /**
+   * Clear dirty flags only for files under a given path prefix (project root).
+   * Used for per-project dirty clearing so a failed project doesn't lose
+   * its dirty flags when a sibling project succeeds.
+   */
+  clearDirtyByPrefix(prefix: string): void {
+    if (!prefix || prefix === "." || prefix === "") {
+      this.clearAllDirty();
+      return;
+    }
+    const normalized = prefix.endsWith("/") ? prefix : prefix + "/";
+    this.db.query("DELETE FROM dirty WHERE path LIKE ?1").run(normalized + "%");
   }
 
   getDirtyPaths(): { path: string; changed_at: number }[] {
