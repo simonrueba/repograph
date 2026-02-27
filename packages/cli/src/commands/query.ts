@@ -4,9 +4,83 @@ import {
   ModuleGraph,
   type GraphMode,
   type ModuleGraphResult,
-} from "repograph-core";
+  type ImpactResult,
+  type DetailedImpactResult,
+} from "ariadne-core";
 import { getContext } from "../lib/context";
 import { output, outputError } from "../lib/output";
+
+/**
+ * Format impact result as hookSpecificOutput JSON for the pre-edit hook.
+ * This replaces the bun -e formatting that previously ran in a subprocess.
+ */
+function formatImpactAsHook(result: ImpactResult | DetailedImpactResult, file: string): void {
+  const symbols = result.changedSymbols || [];
+  const deps = result.dependentFiles || [];
+  const tests = result.recommendedTests || [];
+
+  if (symbols.length === 0 && deps.length === 0 && tests.length === 0) {
+    return;
+  }
+
+  const lines: string[] = [];
+  lines.push("[Impact Analysis] Editing " + file);
+
+  if (symbols.length > 0) {
+    const names = [...new Set(symbols.map((s) => s.name))];
+    lines.push(
+      "  Symbols defined here: " +
+        names.slice(0, 20).join(", ") +
+        (names.length > 20 ? " (+" + (names.length - 20) + " more)" : ""),
+    );
+  }
+
+  if (deps.length > 0) {
+    const top = deps.slice(0, 10);
+    lines.push(
+      "  Dependent files (" +
+        deps.length +
+        "): " +
+        top.map((d) => d.path).join(", ") +
+        (deps.length > 10 ? " (+" + (deps.length - 10) + " more)" : ""),
+    );
+  }
+
+  if (tests.length > 0) {
+    lines.push("  Recommended tests: " + tests.map((t) => t.command).join(", "));
+  }
+
+  const detailed = result as DetailedImpactResult;
+
+  if (detailed.symbolDetails?.length > 0) {
+    const detailLines = detailed.symbolDetails.slice(0, 5).map((s) => {
+      const kind = s.kind ? ` (${s.kind})` : "";
+      const doc = s.doc ? " — " + s.doc.split("\n").slice(0, 2).join(" ") : "";
+      return `    ${s.name}${kind}${doc}`;
+    });
+    lines.push("  Symbol details:");
+    lines.push(...detailLines);
+  }
+
+  if (detailed.keyRefs?.length > 0) {
+    const refLines = detailed.keyRefs.slice(0, 5).map(
+      (kr) =>
+        `    ${kr.symbolName} in ${kr.filePath}` +
+        (kr.snippet ? `: ${kr.snippet.split("\n")[0]}` : ""),
+    );
+    lines.push("  Key references:");
+    lines.push(...refLines);
+  }
+
+  const context = lines.join("\n");
+  const hookOutput = {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      additionalContext: context,
+    },
+  };
+  process.stdout.write(JSON.stringify(hookOutput) + "\n");
+}
 
 // ── Argument helpers ───────────────────────────────────────────────────
 
@@ -79,7 +153,7 @@ export async function runQuery(args: string[]): Promise<void> {
       case "search": {
         const query = cleanArgs[1];
         if (!query) {
-          outputError("MISSING_ARGUMENT", "Usage: repograph query search <name> [--root <path>]");
+          outputError("MISSING_ARGUMENT", "Usage: ariadne query search <name> [--root <path>]");
         }
         const k = parseInt(cleanArgs[2] || "10", 10);
         const results = graph.searchSymbol(query, k);
@@ -90,7 +164,7 @@ export async function runQuery(args: string[]): Promise<void> {
       case "def": {
         const symbolId = cleanArgs[1];
         if (!symbolId) {
-          outputError("MISSING_ARGUMENT", "Usage: repograph query def <symbol-id> [--root <path>]");
+          outputError("MISSING_ARGUMENT", "Usage: ariadne query def <symbol-id> [--root <path>]");
         }
         const result = graph.getDef(symbolId);
         output("query.def", { result });
@@ -100,7 +174,7 @@ export async function runQuery(args: string[]): Promise<void> {
       case "refs": {
         const symbolId = cleanArgs[1];
         if (!symbolId) {
-          outputError("MISSING_ARGUMENT", "Usage: repograph query refs <symbol-id> [--root <path>]");
+          outputError("MISSING_ARGUMENT", "Usage: ariadne query refs <symbol-id> [--root <path>]");
         }
         const results = graph.findRefs(symbolId);
         output("query.refs", { results });
@@ -109,18 +183,24 @@ export async function runQuery(args: string[]): Promise<void> {
 
       case "impact": {
         const details = cleanArgs.includes("--details");
+        const hookFormat = cleanArgs.includes("--format=hook");
         const files = cleanArgs.slice(1).filter((a) => !a.startsWith("--"));
         if (files.length === 0) {
           outputError(
             "MISSING_ARGUMENT",
-            "Usage: repograph query impact <file1> [file2] ... [--details] [--root <path>]",
+            "Usage: ariadne query impact <file1> [file2] ... [--details] [--format=hook] [--root <path>]",
           );
         }
         const analyzer = new ImpactAnalyzer(ctx.store, ctx.repoRoot);
         const result = details
           ? analyzer.computeDetailedImpact(files)
           : analyzer.computeImpact(files);
-        output("query.impact", { result });
+
+        if (hookFormat) {
+          formatImpactAsHook(result, files[0] ?? "file");
+        } else {
+          output("query.impact", { result });
+        }
         break;
       }
 
@@ -152,7 +232,7 @@ export async function runQuery(args: string[]): Promise<void> {
         if (!symbolId) {
           outputError(
             "MISSING_ARGUMENT",
-            "Usage: repograph query symbol-graph <symbol-id> [--format json|dot|mermaid] [--max-nodes N] [--root <path>]",
+            "Usage: ariadne query symbol-graph <symbol-id> [--format json|dot|mermaid] [--max-nodes N] [--root <path>]",
           );
         }
 
@@ -173,7 +253,7 @@ export async function runQuery(args: string[]): Promise<void> {
         if (!symbolId) {
           outputError(
             "MISSING_ARGUMENT",
-            "Usage: repograph query call-graph <symbol-id> [--depth N] [--root <path>]",
+            "Usage: ariadne query call-graph <symbol-id> [--depth N] [--root <path>]",
           );
         }
         const depth = depthRaw ? parseInt(depthRaw, 10) : 1;

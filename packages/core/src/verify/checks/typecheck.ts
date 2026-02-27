@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execSync, exec } from "child_process";
 import { existsSync } from "fs";
 import { join, relative } from "path";
 
@@ -14,7 +14,7 @@ export interface TypecheckIssue {
   col: number;
   /** TypeScript error code, e.g. "TS2345", or empty string if unparseable. */
   code: string;
-  /** Repograph query suggestions relevant to this error. */
+  /** Ariadne query suggestions relevant to this error. */
   suggestedQueries?: string[];
 }
 
@@ -79,7 +79,7 @@ function extractIdentifier(errorMessage: string): string | null {
 }
 
 /**
- * Build a list of suggested repograph query strings for a given tsc error.
+ * Build a list of suggested ariadne query strings for a given tsc error.
  *
  * Suggestions follow this strategy:
  *  - Every error gets an `impact` suggestion for the file it lives in.
@@ -95,7 +95,7 @@ export function suggestQueries(
 
   // Always suggest impact analysis on the affected file.
   if (file) {
-    suggestions.push(`repograph query impact ${file}`);
+    suggestions.push(`ariadne query impact ${file}`);
   }
 
   const identifier = extractIdentifier(errorMessage);
@@ -105,7 +105,7 @@ export function suggestQueries(
     // Extract the function/parameter name from the message context.
     case "TS2345": {
       if (identifier) {
-        suggestions.push(`repograph query search ${identifier}`);
+        suggestions.push(`ariadne query search ${identifier}`);
       }
       break;
     }
@@ -119,7 +119,7 @@ export function suggestQueries(
       // The missing export name is typically the last quoted token.
       const exportName = allNames.length > 1 ? allNames[allNames.length - 1] : identifier;
       if (exportName) {
-        suggestions.push(`repograph query search ${exportName}`);
+        suggestions.push(`ariadne query search ${exportName}`);
       }
       break;
     }
@@ -127,7 +127,7 @@ export function suggestQueries(
     // TS2339 — Property 'X' does not exist on type 'Y'
     case "TS2339": {
       if (identifier) {
-        suggestions.push(`repograph query search ${identifier}`);
+        suggestions.push(`ariadne query search ${identifier}`);
       }
       break;
     }
@@ -135,7 +135,7 @@ export function suggestQueries(
     // TS2304 — Cannot find name 'X'
     case "TS2304": {
       if (identifier) {
-        suggestions.push(`repograph query search ${identifier}`);
+        suggestions.push(`ariadne query search ${identifier}`);
       }
       break;
     }
@@ -143,7 +143,7 @@ export function suggestQueries(
     // TS2322 — Type 'X' is not assignable to type 'Y'
     case "TS2322": {
       if (identifier) {
-        suggestions.push(`repograph query search ${identifier}`);
+        suggestions.push(`ariadne query search ${identifier}`);
       }
       break;
     }
@@ -164,17 +164,42 @@ function findTscCommand(repoRoot: string): string {
   return "bunx tsc";
 }
 
+/** Parse tsc output into TypecheckIssue[] */
+function parseTscOutput(rawOutput: string, repoRoot: string): TypecheckIssue[] {
+  const errorLines = rawOutput
+    .split("\n")
+    .filter((l: string) => l.includes("error TS"))
+    .slice(0, 20); // cap at 20 errors
+
+  return errorLines.map((raw: string) => {
+    const parsed = parseTscErrorLine(raw, repoRoot);
+
+    if (!parsed) {
+      return {
+        type: "TYPE_ERROR" as const,
+        message: raw.trim(),
+        file: "",
+        line: 0,
+        col: 0,
+        code: "",
+      };
+    }
+
+    return {
+      type: "TYPE_ERROR" as const,
+      message: parsed.message,
+      file: parsed.file,
+      line: parsed.line,
+      col: parsed.col,
+      code: parsed.code,
+      suggestedQueries: suggestQueries(parsed.code, parsed.message, parsed.file),
+    };
+  });
+}
+
 /**
- * Run the TypeScript compiler in noEmit mode to catch type errors.
+ * Run the TypeScript compiler in noEmit mode to catch type errors (sync).
  * Looks for tsconfig.json in the repo root. Skips if none found.
- *
- * Each issue contains:
- *  - `message`: the full raw tsc error line (backward-compatible)
- *  - `file`, `line`, `col`, `code`: structured fields parsed from the line
- *  - `suggestedQueries`: repograph commands relevant to the error
- *
- * Lines that do not match the standard tsc format fall back to the old
- * behaviour: `message` is set and all other fields are left as defaults.
  */
 export function checkTypecheck(repoRoot: string): TypecheckResult {
   const tsconfigPath = join(repoRoot, "tsconfig.json");
@@ -195,38 +220,34 @@ export function checkTypecheck(repoRoot: string): TypecheckResult {
     const anyErr = err as { stdout?: Buffer; stderr?: Buffer };
     const output =
       (anyErr.stdout?.toString() ?? "") + (anyErr.stderr?.toString() ?? "");
-
-    const errorLines = output
-      .split("\n")
-      .filter((l: string) => l.includes("error TS"))
-      .slice(0, 20); // cap at 20 errors
-
-    const issues: TypecheckIssue[] = errorLines.map((raw: string) => {
-      const parsed = parseTscErrorLine(raw, repoRoot);
-
-      if (!parsed) {
-        // Unparseable line — fall back to legacy shape.
-        return {
-          type: "TYPE_ERROR" as const,
-          message: raw.trim(),
-          file: "",
-          line: 0,
-          col: 0,
-          code: "",
-        };
-      }
-
-      return {
-        type: "TYPE_ERROR" as const,
-        message: parsed.message,
-        file: parsed.file,
-        line: parsed.line,
-        col: parsed.col,
-        code: parsed.code,
-        suggestedQueries: suggestQueries(parsed.code, parsed.message, parsed.file),
-      };
-    });
-
-    return { passed: false, issues };
+    return { passed: false, issues: parseTscOutput(output, repoRoot) };
   }
+}
+
+/**
+ * Async version of checkTypecheck — uses child_process.exec so it can run
+ * in parallel with other checks via Promise.all.
+ */
+export function checkTypecheckAsync(repoRoot: string): Promise<TypecheckResult> {
+  const tsconfigPath = join(repoRoot, "tsconfig.json");
+  if (!existsSync(tsconfigPath)) {
+    return Promise.resolve({ passed: true, issues: [] });
+  }
+
+  const tsc = findTscCommand(repoRoot);
+
+  return new Promise((resolve) => {
+    exec(
+      `${tsc} --noEmit -p ${tsconfigPath}`,
+      { cwd: repoRoot, timeout: 120_000 },
+      (error, stdout, stderr) => {
+        if (!error) {
+          resolve({ passed: true, issues: [] });
+          return;
+        }
+        const output = (stdout ?? "") + (stderr ?? "");
+        resolve({ passed: false, issues: parseTscOutput(output, repoRoot) });
+      },
+    );
+  });
 }

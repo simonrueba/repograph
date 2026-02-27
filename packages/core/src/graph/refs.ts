@@ -1,5 +1,5 @@
 import type { StoreQueries } from "../store/queries";
-import { unpackRange, formatRange, getSnippet } from "./utils";
+import { unpackRange, formatRange, getSnippet, createSnippetCache } from "./utils";
 
 // ── Result types ──────────────────────────────────────────────────────
 
@@ -49,8 +49,7 @@ export class GraphQueries {
 
   /** Fuzzy-search symbols by name, returning at most `k` results. */
   searchSymbol(query: string, k = 10): SymbolResult[] {
-    const all = this.store.searchSymbols(query);
-    const limited = all.slice(0, k);
+    const limited = this.store.searchSymbols(query, k);
     return limited.map((s) => ({
       id: s.id,
       name: s.name,
@@ -102,13 +101,14 @@ export class GraphQueries {
       occs = occs.filter((o) => o.file_path.startsWith(opts.scope!));
     }
 
+    const cache = createSnippetCache();
     return occs.map((o) => {
       const range = formatRange(o.range_start, o.range_end);
       return {
         filePath: o.file_path,
         range,
         roles: o.roles,
-        snippet: getSnippet(this.repoRoot, o.file_path, range.startLine),
+        snippet: getSnippet(this.repoRoot, o.file_path, range.startLine, cache),
       };
     });
   }
@@ -120,34 +120,50 @@ export class GraphQueries {
     const seenCallers = new Set<string>();
     const seenCallees = new Set<string>();
 
-    const collectCallers = (id: string, remaining: number) => {
+    // Collect all edge IDs first, then batch-fetch symbols
+    const callerEdgeIds: string[] = [];
+    const calleeEdgeIds: string[] = [];
+
+    const collectCallerIds = (id: string, remaining: number) => {
       if (remaining <= 0) return;
       for (const edge of this.store.getCallers(id)) {
         if (seenCallers.has(edge.source)) continue;
         seenCallers.add(edge.source);
-        const sym = this.store.getSymbol(edge.source);
-        if (sym) {
-          callers.push({ id: sym.id, name: sym.name, filePath: sym.file_path ?? undefined });
-          collectCallers(sym.id, remaining - 1);
-        }
+        callerEdgeIds.push(edge.source);
+        collectCallerIds(edge.source, remaining - 1);
       }
     };
 
-    const collectCallees = (id: string, remaining: number) => {
+    const collectCalleeIds = (id: string, remaining: number) => {
       if (remaining <= 0) return;
       for (const edge of this.store.getCallees(id)) {
         if (seenCallees.has(edge.target)) continue;
         seenCallees.add(edge.target);
-        const sym = this.store.getSymbol(edge.target);
-        if (sym) {
-          callees.push({ id: sym.id, name: sym.name, filePath: sym.file_path ?? undefined });
-          collectCallees(sym.id, remaining - 1);
-        }
+        calleeEdgeIds.push(edge.target);
+        collectCalleeIds(edge.target, remaining - 1);
       }
     };
 
-    collectCallers(symbolId, depth);
-    collectCallees(symbolId, depth);
+    collectCallerIds(symbolId, depth);
+    collectCalleeIds(symbolId, depth);
+
+    // Batch-fetch all symbols in 2 queries instead of N individual queries
+    const allIds = [...callerEdgeIds, ...calleeEdgeIds];
+    const symbolMap = allIds.length > 0 ? this.store.getSymbolsBatch(allIds) : new Map();
+
+    for (const id of callerEdgeIds) {
+      const sym = symbolMap.get(id);
+      if (sym) {
+        callers.push({ id: sym.id, name: sym.name, filePath: sym.file_path ?? undefined });
+      }
+    }
+
+    for (const id of calleeEdgeIds) {
+      const sym = symbolMap.get(id);
+      if (sym) {
+        callees.push({ id: sym.id, name: sym.name, filePath: sym.file_path ?? undefined });
+      }
+    }
 
     return { root: symbolId, callers, callees };
   }

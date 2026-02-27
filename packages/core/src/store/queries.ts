@@ -190,12 +190,41 @@ export class StoreQueries {
     );
   }
 
-  searchSymbols(query: string): SymbolRecord[] {
+  searchSymbols(query: string, k = 50): SymbolRecord[] {
+    // Fast path: prefix match (can use index on name column)
+    const prefixResults = this.db
+      .query(
+        "SELECT id, kind, name, file_path, range_start, range_end, doc FROM symbols WHERE name LIKE ?1 LIMIT ?2",
+      )
+      .all(`${query}%`, k) as SymbolRecord[];
+
+    if (prefixResults.length >= k) return prefixResults;
+
+    // Fallback: substring match (full scan, but bounded by LIMIT)
     return this.db
       .query(
-        "SELECT id, kind, name, file_path, range_start, range_end, doc FROM symbols WHERE name LIKE ?1",
+        "SELECT id, kind, name, file_path, range_start, range_end, doc FROM symbols WHERE name LIKE ?1 LIMIT ?2",
       )
-      .all(`%${query}%`) as SymbolRecord[];
+      .all(`%${query}%`, k) as SymbolRecord[];
+  }
+
+  /**
+   * Batch-fetch symbols by IDs. Returns a Map for O(1) lookup.
+   * Uses a single query with IN clause instead of N individual queries.
+   */
+  getSymbolsBatch(ids: string[]): Map<string, SymbolRecord> {
+    if (ids.length === 0) return new Map();
+    const placeholders = ids.map(() => "?").join(",");
+    const rows = this.db
+      .query(
+        `SELECT id, kind, name, file_path, range_start, range_end, doc FROM symbols WHERE id IN (${placeholders})`,
+      )
+      .all(...ids) as SymbolRecord[];
+    const map = new Map<string, SymbolRecord>();
+    for (const row of rows) {
+      map.set(row.id, row);
+    }
+    return map;
   }
 
   getSymbolsByFile(filePath: string): SymbolRecord[] {
@@ -294,6 +323,15 @@ export class StoreQueries {
     for (const edge of edges) {
       stmt.run(edge.source, edge.target, edge.kind, edge.confidence ?? "high");
     }
+  }
+
+  /** Fetch all import edges in a single query (for boundary checks). */
+  getImportEdges(): EdgeRecord[] {
+    return this.db
+      .query(
+        "SELECT source, target, kind, confidence FROM edges WHERE kind = 'imports'",
+      )
+      .all() as EdgeRecord[];
   }
 
   getCallees(symbolId: string): EdgeRecord[] {

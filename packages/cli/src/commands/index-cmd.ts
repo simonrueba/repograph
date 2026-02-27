@@ -7,12 +7,12 @@ import {
   ScipPythonIndexer,
   ScipParser,
   detectProjects,
-} from "repograph-core";
+} from "ariadne-core";
 import { getContext } from "../lib/context";
 import { output } from "../lib/output";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".py"]);
-const SKIP_DIRS = new Set(["node_modules", "dist", ".repograph", ".git"]);
+const SKIP_DIRS = new Set(["node_modules", "dist", ".ariadne", ".git"]);
 
 function languageFromExt(ext: string): string {
   if ([".ts", ".tsx"].includes(ext)) return "typescript";
@@ -228,11 +228,11 @@ export async function runIndex(args: string[]): Promise<void> {
   ctx.store.clearAllDirty();
 
   // Check if symbols were actually ingested — warn if not
-  const symbolCount = ctx.store.searchSymbols("").length;
+  const symbolCount = ctx.store.getSymbolCount();
   if (sourceFiles.length > 0 && symbolCount === 0 && !structuralOnly) {
     warnings.push(
       `indexed ${sourceFiles.length} files but 0 symbols — SCIP indexing likely failed. ` +
-      `Run 'repograph doctor' to check prerequisites.`,
+      `Run 'ariadne doctor' to check prerequisites.`,
     );
   }
 
