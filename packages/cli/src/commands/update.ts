@@ -165,6 +165,7 @@ function walkArtifactFiles(
 
 export async function runUpdate(args: string[]): Promise<void> {
   const useFull = args.includes("--full");
+  const useReingest = args.includes("--reingest");
   const targetedFiles = parseFilesFlag(args);
   const fileSet = new Set(targetedFiles ?? []);
   const rootArg = args.find((a) => !a.startsWith("--") && !fileSet.has(a));
@@ -238,17 +239,18 @@ export async function runUpdate(args: string[]): Promise<void> {
   // Record structural index timestamp
   ctx.store.setMeta("last_structural_index_ts", String(Date.now()));
 
-  // Run SCIP indexers when dirty source files exist or --full forces it
+  // Run SCIP indexers when dirty source files exist, --full, or --reingest forces it
   const indexerResults: { indexer: string; result: unknown }[] = [];
   const succeededProjectIds = new Set<string>();
   const hasDirtySourceFiles = ctx.store.getDirtyPaths().length > 0;
+  const shouldRunScip = useFull || useReingest || hasDirtySourceFiles;
 
   // Only detect projects when SCIP indexing will actually run.
   // For targeted single-file updates with no dirty source files,
   // this avoids a full repo walk (~20-50ms savings per hook invocation).
-  const projects = (useFull || hasDirtySourceFiles) ? detectProjects(ctx.repoRoot) : [];
+  const projects = shouldRunScip ? detectProjects(ctx.repoRoot) : [];
 
-  if (useFull || hasDirtySourceFiles) {
+  if (shouldRunScip) {
     const tsIndexer = new ScipTypescriptIndexer();
     const pyIndexer = new ScipPythonIndexer();
 
@@ -271,12 +273,16 @@ export async function runUpdate(args: string[]): Promise<void> {
       const parser = new ScipParser();
       const index = await parser.parse(result.scipFilePath);
       // Build file hash map for skip-unchanged; use bulk mode for full reindexes.
-      // For targeted updates, include hashes from the DB for files not in sourceFiles.
-      const fileHashes = new Map(sourceFiles.map((f) => [f.path, f.hash]));
-      if (targetedFiles) {
-        for (const dbFile of ctx.store.getAllFiles()) {
-          if (!fileHashes.has(dbFile.path)) {
-            fileHashes.set(dbFile.path, dbFile.hash);
+      // --reingest skips hash checking to force re-ingestion (e.g. after package rename
+      // where symbol IDs change but file contents don't).
+      let fileHashes: Map<string, string> | undefined;
+      if (!useReingest) {
+        fileHashes = new Map(sourceFiles.map((f) => [f.path, f.hash]));
+        if (targetedFiles) {
+          for (const dbFile of ctx.store.getAllFiles()) {
+            if (!fileHashes.has(dbFile.path)) {
+              fileHashes.set(dbFile.path, dbFile.hash);
+            }
           }
         }
       }
@@ -313,7 +319,7 @@ export async function runUpdate(args: string[]): Promise<void> {
           last_index_ts: ctx.store.getProject(project.projectId)?.last_index_ts ?? 0,
         });
 
-        const projectHasDirtyFiles = [...allChangedPaths].some((filePath) =>
+        const projectHasDirtyFiles = useReingest || [...allChangedPaths].some((filePath) =>
           fileInProject(filePath, project.projectId),
         );
 
@@ -374,7 +380,7 @@ export async function runUpdate(args: string[]): Promise<void> {
   // Record full SCIP index timestamp and clear dirty set per successful project.
   // Only clear dirty flags for projects that actually indexed successfully —
   // a failed project keeps its dirty flags so the next run retries it.
-  const scipRan = useFull || hasDirtySourceFiles;
+  const scipRan = shouldRunScip;
   if (scipRan && succeededProjectIds.size > 0) {
     ctx.store.setMeta("last_full_scip_index_ts", String(Date.now()));
     if (projects.length === 0) {
