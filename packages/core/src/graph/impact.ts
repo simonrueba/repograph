@@ -33,6 +33,15 @@ const TEST_PATTERNS = [
   /\.spec\.[tj]sx?$/,
   /test_.*\.py$/,
   /.*_test\.py$/,
+  /.*_test\.go$/,
+  /.*_test\.rs$/,
+  /Test\.java$/,
+  /Test\.kt$/,
+  /Tests?\.cs$/,
+  /_test\.rb$/,
+  /_spec\.rb$/,
+  /Spec\.scala$/,
+  /Test\.scala$/,
 ];
 
 function isTestFile(path: string): boolean {
@@ -40,7 +49,14 @@ function isTestFile(path: string): boolean {
 }
 
 function testCommand(path: string): string {
-  return path.endsWith(".py") ? `pytest ${path}` : `vitest run ${path}`;
+  if (path.endsWith(".py")) return `pytest ${path}`;
+  if (path.endsWith("_test.go")) return `go test ./${path.replace(/\/[^/]+$/, "/...")}`;
+  if (path.endsWith("_test.rs")) return `cargo test`;
+  if (path.endsWith(".java") || path.endsWith(".kt")) return `mvn test -pl ${path.replace(/\/src\/.*/, "")}`;
+  if (path.endsWith(".scala")) return `sbt test`;
+  if (path.endsWith(".cs")) return `dotnet test`;
+  if (path.endsWith("_test.rb") || path.endsWith("_spec.rb")) return `bundle exec ruby ${path}`;
+  return `vitest run ${path}`;
 }
 
 /** Internal result that carries cached occurrence data for reuse. */

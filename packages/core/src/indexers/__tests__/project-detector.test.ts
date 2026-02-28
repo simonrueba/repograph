@@ -407,6 +407,212 @@ describe("detectProjects", () => {
     });
   });
 
+  // ── Go and Rust project detection ───────────────────────────────────
+
+  describe("Go project detection", () => {
+    it("detects Go project from go.mod at root", () => {
+      const root = makeTempDir();
+      writeFileSync(join(root, "go.mod"), "module example.com/myapp\n\ngo 1.21\n", "utf-8");
+
+      const projects = detectProjects(root);
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0].language).toBe("go");
+      expect(projects[0].projectId).toBe(".");
+    });
+
+    it("detects Go project in subdirectory", () => {
+      const root = makeTempDir();
+      mkdirp(join(root, "services"));
+      writeFileSync(join(root, "services", "go.mod"), "module example.com/svc\n", "utf-8");
+
+      const projects = detectProjects(root);
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0].language).toBe("go");
+      expect(projects[0].projectId).toBe("services");
+    });
+  });
+
+  describe("Rust project detection", () => {
+    it("detects Rust project from Cargo.toml at root", () => {
+      const root = makeTempDir();
+      writeFileSync(join(root, "Cargo.toml"), "[package]\nname = \"myapp\"\n", "utf-8");
+
+      const projects = detectProjects(root);
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0].language).toBe("rust");
+      expect(projects[0].projectId).toBe(".");
+    });
+
+    it("detects Rust project in subdirectory", () => {
+      const root = makeTempDir();
+      mkdirp(join(root, "crates"));
+      writeFileSync(join(root, "crates", "Cargo.toml"), "[package]\nname = \"lib\"\n", "utf-8");
+
+      const projects = detectProjects(root);
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0].language).toBe("rust");
+      expect(projects[0].projectId).toBe("crates");
+    });
+  });
+
+  describe("Java project detection", () => {
+    it("detects Java project from pom.xml at root", () => {
+      const root = makeTempDir();
+      writeFileSync(join(root, "pom.xml"), "<project></project>\n", "utf-8");
+
+      const projects = detectProjects(root);
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0].language).toBe("java");
+      expect(projects[0].projectId).toBe(".");
+    });
+
+    it("detects Java project from build.gradle", () => {
+      const root = makeTempDir();
+      writeFileSync(join(root, "build.gradle"), "apply plugin: 'java'\n", "utf-8");
+
+      const projects = detectProjects(root);
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0].language).toBe("java");
+    });
+
+    it("detects Java project from build.gradle.kts", () => {
+      const root = makeTempDir();
+      writeFileSync(join(root, "build.gradle.kts"), "plugins { java }\n", "utf-8");
+
+      const projects = detectProjects(root);
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0].language).toBe("java");
+    });
+  });
+
+  describe("C# project detection", () => {
+    it("detects C# project from .sln file", () => {
+      const root = makeTempDir();
+      writeFileSync(join(root, "MyApp.sln"), "Microsoft Visual Studio Solution\n", "utf-8");
+
+      const projects = detectProjects(root);
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0].language).toBe("csharp");
+      expect(projects[0].projectId).toBe(".");
+    });
+
+    it("detects C# project from .csproj file", () => {
+      const root = makeTempDir();
+      writeFileSync(join(root, "MyApp.csproj"), "<Project></Project>\n", "utf-8");
+
+      const projects = detectProjects(root);
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0].language).toBe("csharp");
+    });
+  });
+
+  describe("Scala project detection", () => {
+    it("detects Scala project from build.sbt at root", () => {
+      const root = makeTempDir();
+      writeFileSync(join(root, "build.sbt"), 'name := "myapp"\n', "utf-8");
+
+      const projects = detectProjects(root);
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0].language).toBe("scala");
+      expect(projects[0].projectId).toBe(".");
+    });
+
+    it("detects Scala project in subdirectory", () => {
+      const root = makeTempDir();
+      mkdirp(join(root, "services"));
+      writeFileSync(join(root, "services", "build.sbt"), 'name := "svc"\n', "utf-8");
+
+      const projects = detectProjects(root);
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0].language).toBe("scala");
+      expect(projects[0].projectId).toBe("services");
+    });
+  });
+
+  describe("Ruby project detection", () => {
+    it("detects Ruby project from Gemfile at root", () => {
+      const root = makeTempDir();
+      writeFileSync(join(root, "Gemfile"), "source 'https://rubygems.org'\n", "utf-8");
+
+      const projects = detectProjects(root);
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0].language).toBe("ruby");
+      expect(projects[0].projectId).toBe(".");
+    });
+
+    it("detects Ruby project in subdirectory", () => {
+      const root = makeTempDir();
+      mkdirp(join(root, "services"));
+      writeFileSync(join(root, "services", "Gemfile"), "source 'https://rubygems.org'\n", "utf-8");
+
+      const projects = detectProjects(root);
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0].language).toBe("ruby");
+      expect(projects[0].projectId).toBe("services");
+    });
+  });
+
+  describe("multi-language with all eight languages", () => {
+    it("detects all languages in a polyglot monorepo", () => {
+      const root = makeTempDir();
+      writeJson(join(root, "package.json"), { workspaces: ["packages/*"] });
+
+      // TypeScript
+      const tsDir = join(root, "packages", "web");
+      mkdirp(tsDir);
+      writeJson(join(tsDir, "package.json"), { name: "web" });
+      writeFileSync(join(tsDir, "tsconfig.json"), "{}", "utf-8");
+
+      // Go
+      const goDir = join(root, "packages", "api");
+      mkdirp(goDir);
+      writeFileSync(join(goDir, "go.mod"), "module api\n", "utf-8");
+
+      // Rust
+      const rsDir = join(root, "packages", "engine");
+      mkdirp(rsDir);
+      writeFileSync(join(rsDir, "Cargo.toml"), "[package]\nname = \"engine\"\n", "utf-8");
+
+      // Java
+      const javaDir = join(root, "packages", "backend");
+      mkdirp(javaDir);
+      writeFileSync(join(javaDir, "pom.xml"), "<project></project>\n", "utf-8");
+
+      // Scala
+      const scalaDir = join(root, "packages", "analytics");
+      mkdirp(scalaDir);
+      writeFileSync(join(scalaDir, "build.sbt"), 'name := "analytics"\n', "utf-8");
+
+      // C#
+      const csDir = join(root, "packages", "desktop");
+      mkdirp(csDir);
+      writeFileSync(join(csDir, "App.csproj"), "<Project></Project>\n", "utf-8");
+
+      // Ruby
+      const rbDir = join(root, "packages", "worker");
+      mkdirp(rbDir);
+      writeFileSync(join(rbDir, "Gemfile"), "source 'https://rubygems.org'\n", "utf-8");
+
+      const projects = detectProjects(root);
+
+      const languages = projects.map((p) => p.language).sort();
+      expect(languages).toEqual(["csharp", "go", "java", "ruby", "rust", "scala", "typescript"]);
+    });
+  });
+
   // ── Malformed / edge cases ─────────────────────────────────────────────
 
   describe("edge cases", () => {

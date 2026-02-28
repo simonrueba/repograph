@@ -8,7 +8,7 @@ export interface DetectedProject {
   projectId: string;
   /** Absolute path to the project root directory. */
   root: string;
-  language: "typescript" | "python";
+  language: "typescript" | "python" | "go" | "rust" | "java" | "scala" | "csharp" | "ruby";
   /** Absolute path to tsconfig.json, only present for TypeScript projects. */
   tsconfigPath?: string;
 }
@@ -62,8 +62,19 @@ function expandWorkspaceGlob(repoRoot: string, pattern: string): string[] {
     const hasTsconfig = existsSync(join(abs, "tsconfig.json"));
     const hasPyproject = existsSync(join(abs, "pyproject.toml"));
     const hasSetupPy = existsSync(join(abs, "setup.py"));
+    const hasGoMod = existsSync(join(abs, "go.mod"));
+    const hasCargoToml = existsSync(join(abs, "Cargo.toml"));
+    const hasPomXml = existsSync(join(abs, "pom.xml"));
+    const hasBuildGradle = existsSync(join(abs, "build.gradle")) || existsSync(join(abs, "build.gradle.kts"));
+    const hasBuildSbt = existsSync(join(abs, "build.sbt"));
+    const hasGemfile = existsSync(join(abs, "Gemfile"));
+    let hasCsproj = false;
+    try {
+      const wsEntries = readdirSync(abs);
+      hasCsproj = wsEntries.some((e) => e.endsWith(".sln") || e.endsWith(".csproj"));
+    } catch { /* skip */ }
 
-    if (hasPackageJson || hasTsconfig || hasPyproject || hasSetupPy) {
+    if (hasPackageJson || hasTsconfig || hasPyproject || hasSetupPy || hasGoMod || hasCargoToml || hasPomXml || hasBuildGradle || hasBuildSbt || hasGemfile || hasCsproj) {
       results.push(abs);
     }
   }
@@ -99,6 +110,61 @@ function projectsFromDir(
       projectId,
       root: absDir,
       language: "python",
+    });
+  }
+
+  if (existsSync(join(absDir, "go.mod"))) {
+    detected.push({
+      projectId,
+      root: absDir,
+      language: "go",
+    });
+  }
+
+  if (existsSync(join(absDir, "Cargo.toml"))) {
+    detected.push({
+      projectId,
+      root: absDir,
+      language: "rust",
+    });
+  }
+
+  const hasPomXml = existsSync(join(absDir, "pom.xml"));
+  const hasBuildGradle = existsSync(join(absDir, "build.gradle"));
+  const hasBuildGradleKts = existsSync(join(absDir, "build.gradle.kts"));
+  if (hasPomXml || hasBuildGradle || hasBuildGradleKts) {
+    detected.push({
+      projectId,
+      root: absDir,
+      language: "java",
+    });
+  }
+
+  if (existsSync(join(absDir, "build.sbt"))) {
+    detected.push({
+      projectId,
+      root: absDir,
+      language: "scala",
+    });
+  }
+
+  // C#: check for .sln or .csproj files
+  try {
+    const entries = readdirSync(absDir);
+    if (entries.some((e) => e.endsWith(".sln") || e.endsWith(".csproj"))) {
+      detected.push({
+        projectId,
+        root: absDir,
+        language: "csharp",
+      });
+    }
+  } catch { /* skip unreadable dirs */ }
+
+  if (existsSync(join(absDir, "Gemfile"))) {
+    detected.push({
+      projectId,
+      root: absDir,
+      language: "ruby",
     });
   }
 

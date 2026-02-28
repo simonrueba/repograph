@@ -87,6 +87,66 @@ function checkScipPython(): DoctorCheck {
   return { name: "scip_python", status: "ok", detail: raw };
 }
 
+function checkScipGo(): DoctorCheck {
+  const raw = runCommand("scip-go --help");
+  if (!raw) {
+    return {
+      name: "scip_go",
+      status: "warn",
+      detail: "scip-go not found on PATH — Go SCIP indexing will be skipped. Install: go install github.com/sourcegraph/scip-go@latest",
+    };
+  }
+  return { name: "scip_go", status: "ok", detail: "available" };
+}
+
+function checkScipRust(): DoctorCheck {
+  const raw = runCommand("rust-analyzer --version");
+  if (!raw) {
+    return {
+      name: "scip_rust",
+      status: "warn",
+      detail: "rust-analyzer not found on PATH — Rust SCIP indexing will be skipped. Install: rustup component add rust-analyzer",
+    };
+  }
+  return { name: "scip_rust", status: "ok", detail: raw };
+}
+
+function checkScipJava(): DoctorCheck {
+  const raw = runCommand("scip-java --help") ?? runCommand("mvn --version");
+  if (!raw) {
+    return {
+      name: "scip_java",
+      status: "warn",
+      detail: "scip-java not found on PATH — Java SCIP indexing will be skipped. Install: coursier install scip-java",
+    };
+  }
+  return { name: "scip_java", status: "ok", detail: "available" };
+}
+
+function checkScipCsharp(): DoctorCheck {
+  const raw = runCommand("scip-dotnet --help") ?? runCommand("dotnet --version");
+  if (!raw) {
+    return {
+      name: "scip_csharp",
+      status: "warn",
+      detail: "scip-dotnet not found on PATH — C# SCIP indexing will be skipped. Install: dotnet tool install --global scip-dotnet",
+    };
+  }
+  return { name: "scip_csharp", status: "ok", detail: "available" };
+}
+
+function checkScipRuby(): DoctorCheck {
+  const raw = runCommand("scip-ruby --help");
+  if (!raw) {
+    return {
+      name: "scip_ruby",
+      status: "warn",
+      detail: "scip-ruby not found on PATH — Ruby SCIP indexing will be skipped. Install: gem install scip-ruby",
+    };
+  }
+  return { name: "scip_ruby", status: "ok", detail: "available" };
+}
+
 function checkTsconfigDetection(repoRoot: string): DoctorCheck {
   try {
     const projects = detectProjects(repoRoot);
@@ -159,6 +219,11 @@ export function runDoctor(args: string[]): void {
     checkNodeVersion(),
     checkScipTypescript(),
     checkScipPython(),
+    checkScipGo(),
+    checkScipRust(),
+    checkScipJava(),
+    checkScipCsharp(),
+    checkScipRuby(),
     checkTsconfigDetection(repoRoot),
     checkWritePermission(repoRoot),
     checkIndexDb(repoRoot),

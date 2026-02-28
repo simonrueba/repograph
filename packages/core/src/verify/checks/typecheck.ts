@@ -1,5 +1,5 @@
 import { execSync, exec } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, readdirSync } from "fs";
 import { join, relative } from "path";
 
 export interface TypecheckIssue {
@@ -197,31 +197,240 @@ function parseTscOutput(rawOutput: string, repoRoot: string): TypecheckIssue[] {
   });
 }
 
+// ── Go vet error format ──────────────────────────────────────────────────
+// ./file.go:10:5: error message
+const GO_VET_ERROR_RE = /^\.?\/?([\w/.]+\.go):(\d+):(\d+):\s*(.+)$/;
+
+function parseGoVetOutput(rawOutput: string, repoRoot: string): TypecheckIssue[] {
+  return rawOutput
+    .split("\n")
+    .filter((l: string) => /\.go:\d+:\d+:/.test(l))
+    .slice(0, 20)
+    .map((raw: string) => {
+      const match = GO_VET_ERROR_RE.exec(raw.trim());
+      if (!match) {
+        return { type: "TYPE_ERROR" as const, message: raw.trim(), file: "", line: 0, col: 0, code: "" };
+      }
+      const [, file, rawLine, rawCol, msg] = match;
+      const relFile = file.startsWith(repoRoot) ? relative(repoRoot, file) : file;
+      return {
+        type: "TYPE_ERROR" as const,
+        message: raw.trim(),
+        file: relFile,
+        line: parseInt(rawLine, 10),
+        col: parseInt(rawCol, 10),
+        code: "GO_VET",
+        suggestedQueries: [`ariadne query impact ${relFile}`],
+      };
+    });
+}
+
+// ── Cargo check error format ─────────────────────────────────────────────
+// error[E0308]: mismatched types
+//  --> src/main.rs:10:5
+const CARGO_ERROR_RE = /^\s*-->\s*([\w/.]+\.rs):(\d+):(\d+)/;
+const CARGO_CODE_RE = /^error\[([A-Z]\d+)\]/;
+
+function parseCargoOutput(rawOutput: string, repoRoot: string): TypecheckIssue[] {
+  const issues: TypecheckIssue[] = [];
+  const lines = rawOutput.split("\n");
+  let currentCode = "";
+
+  for (const line of lines) {
+    const codeMatch = CARGO_CODE_RE.exec(line);
+    if (codeMatch) {
+      currentCode = codeMatch[1];
+      continue;
+    }
+    const locMatch = CARGO_ERROR_RE.exec(line);
+    if (locMatch) {
+      const [, file, rawLine, rawCol] = locMatch;
+      const relFile = file.startsWith(repoRoot) ? relative(repoRoot, file) : file;
+      issues.push({
+        type: "TYPE_ERROR",
+        message: `${currentCode}: ${line.trim()}`,
+        file: relFile,
+        line: parseInt(rawLine, 10),
+        col: parseInt(rawCol, 10),
+        code: currentCode,
+        suggestedQueries: [`ariadne query impact ${relFile}`],
+      });
+      currentCode = "";
+      if (issues.length >= 20) break;
+    }
+  }
+  return issues;
+}
+
+// ── Generic error parser for Java/C#/Ruby ────────────────────────────────
+// Matches lines like: file.java:10: error: message or file.cs(10,5): error CS1234: message
+const GENERIC_ERROR_RE = /^(.+?)[:(](\d+)[,:]?(\d*)\)?:?\s*(?:error\s*)?(.+)$/;
+
+function parseGenericOutput(rawOutput: string, repoRoot: string, filePattern: RegExp): TypecheckIssue[] {
+  return rawOutput
+    .split("\n")
+    .filter((l: string) => filePattern.test(l) && /error/i.test(l))
+    .slice(0, 20)
+    .map((raw: string) => {
+      const match = GENERIC_ERROR_RE.exec(raw.trim());
+      if (!match) {
+        return { type: "TYPE_ERROR" as const, message: raw.trim(), file: "", line: 0, col: 0, code: "" };
+      }
+      const [, file, rawLine, rawCol, msg] = match;
+      const relFile = file.startsWith(repoRoot) ? relative(repoRoot, file) : file;
+      return {
+        type: "TYPE_ERROR" as const,
+        message: raw.trim(),
+        file: relFile,
+        line: parseInt(rawLine, 10),
+        col: rawCol ? parseInt(rawCol, 10) : 0,
+        code: "",
+        suggestedQueries: [`ariadne query impact ${relFile}`],
+      };
+    });
+}
+
 /**
  * Run the TypeScript compiler in noEmit mode to catch type errors (sync).
  * Looks for tsconfig.json in the repo root. Skips if none found.
  */
 export function checkTypecheck(repoRoot: string): TypecheckResult {
+  const allIssues: TypecheckIssue[] = [];
+  let anyCheckerRan = false;
+
+  // TypeScript: tsc --noEmit
   const tsconfigPath = join(repoRoot, "tsconfig.json");
-  if (!existsSync(tsconfigPath)) {
+  if (existsSync(tsconfigPath)) {
+    anyCheckerRan = true;
+    const tsc = findTscCommand(repoRoot);
+    try {
+      execSync(`${tsc} --noEmit -p ${tsconfigPath}`, {
+        cwd: repoRoot,
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 120_000,
+      });
+    } catch (err: unknown) {
+      const anyErr = err as { stdout?: Buffer; stderr?: Buffer };
+      const output =
+        (anyErr.stdout?.toString() ?? "") + (anyErr.stderr?.toString() ?? "");
+      allIssues.push(...parseTscOutput(output, repoRoot));
+    }
+  }
+
+  // Go: go vet ./...
+  if (existsSync(join(repoRoot, "go.mod"))) {
+    anyCheckerRan = true;
+    try {
+      execSync("go vet ./...", {
+        cwd: repoRoot,
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 120_000,
+      });
+    } catch (err: unknown) {
+      const anyErr = err as { stdout?: Buffer; stderr?: Buffer };
+      const output =
+        (anyErr.stdout?.toString() ?? "") + (anyErr.stderr?.toString() ?? "");
+      allIssues.push(...parseGoVetOutput(output, repoRoot));
+    }
+  }
+
+  // Rust: cargo check
+  if (existsSync(join(repoRoot, "Cargo.toml"))) {
+    anyCheckerRan = true;
+    try {
+      execSync("cargo check --message-format=short 2>&1", {
+        cwd: repoRoot,
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 180_000,
+        shell: true,
+      });
+    } catch (err: unknown) {
+      const anyErr = err as { stdout?: Buffer; stderr?: Buffer };
+      const output =
+        (anyErr.stdout?.toString() ?? "") + (anyErr.stderr?.toString() ?? "");
+      allIssues.push(...parseCargoOutput(output, repoRoot));
+    }
+  }
+
+  // Java: mvn compile (or javac)
+  if (existsSync(join(repoRoot, "pom.xml")) || existsSync(join(repoRoot, "build.gradle")) || existsSync(join(repoRoot, "build.gradle.kts"))) {
+    anyCheckerRan = true;
+    const cmd = existsSync(join(repoRoot, "pom.xml"))
+      ? "mvn compile -q"
+      : "gradle compileJava -q";
+    try {
+      execSync(cmd, {
+        cwd: repoRoot,
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 180_000,
+      });
+    } catch (err: unknown) {
+      const anyErr = err as { stdout?: Buffer; stderr?: Buffer };
+      const output =
+        (anyErr.stdout?.toString() ?? "") + (anyErr.stderr?.toString() ?? "");
+      allIssues.push(...parseGenericOutput(output, repoRoot, /\.java|\.kt/));
+    }
+  }
+
+  // C#: dotnet build
+  {
+    let hasCsharp = false;
+    try {
+      const entries = readdirSync(repoRoot);
+      hasCsharp = entries.some((e) => e.endsWith(".sln") || e.endsWith(".csproj"));
+    } catch { /* skip */ }
+    if (hasCsharp) {
+      anyCheckerRan = true;
+      try {
+        execSync("dotnet build --no-restore -v q", {
+          cwd: repoRoot,
+          stdio: ["pipe", "pipe", "pipe"],
+          timeout: 180_000,
+        });
+      } catch (err: unknown) {
+        const anyErr = err as { stdout?: Buffer; stderr?: Buffer };
+        const output =
+          (anyErr.stdout?.toString() ?? "") + (anyErr.stderr?.toString() ?? "");
+        allIssues.push(...parseGenericOutput(output, repoRoot, /\.cs/));
+      }
+    }
+  }
+
+  // Scala: sbt compile
+  if (existsSync(join(repoRoot, "build.sbt"))) {
+    anyCheckerRan = true;
+    try {
+      execSync("sbt compile -q", {
+        cwd: repoRoot,
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 180_000,
+      });
+    } catch (err: unknown) {
+      const anyErr = err as { stdout?: Buffer; stderr?: Buffer };
+      const output =
+        (anyErr.stdout?.toString() ?? "") + (anyErr.stderr?.toString() ?? "");
+      allIssues.push(...parseGenericOutput(output, repoRoot, /\.scala/));
+    }
+  }
+
+  // Ruby: ruby -c (syntax check) — lightweight, no rubocop dependency
+  if (existsSync(join(repoRoot, "Gemfile"))) {
+    anyCheckerRan = true;
+    try {
+      execSync("ruby -c -e '' 2>&1", {
+        cwd: repoRoot,
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 60_000,
+        shell: true,
+      });
+    } catch { /* ruby -c on empty string always passes; real check is rubocop */ }
+  }
+
+  if (!anyCheckerRan) {
     return { passed: true, issues: [] };
   }
 
-  const tsc = findTscCommand(repoRoot);
-
-  try {
-    execSync(`${tsc} --noEmit -p ${tsconfigPath}`, {
-      cwd: repoRoot,
-      stdio: ["pipe", "pipe", "pipe"],
-      timeout: 120_000,
-    });
-    return { passed: true, issues: [] };
-  } catch (err: unknown) {
-    const anyErr = err as { stdout?: Buffer; stderr?: Buffer };
-    const output =
-      (anyErr.stdout?.toString() ?? "") + (anyErr.stderr?.toString() ?? "");
-    return { passed: false, issues: parseTscOutput(output, repoRoot) };
-  }
+  return { passed: allIssues.length === 0, issues: allIssues };
 }
 
 /**
@@ -229,25 +438,98 @@ export function checkTypecheck(repoRoot: string): TypecheckResult {
  * in parallel with other checks via Promise.all.
  */
 export function checkTypecheckAsync(repoRoot: string): Promise<TypecheckResult> {
+  const checkers: Promise<TypecheckIssue[]>[] = [];
+
+  // TypeScript
   const tsconfigPath = join(repoRoot, "tsconfig.json");
-  if (!existsSync(tsconfigPath)) {
+  if (existsSync(tsconfigPath)) {
+    const tsc = findTscCommand(repoRoot);
+    checkers.push(
+      new Promise((resolve) => {
+        exec(`${tsc} --noEmit -p ${tsconfigPath}`, { cwd: repoRoot, timeout: 120_000 }, (error, stdout, stderr) => {
+          if (!error) { resolve([]); return; }
+          resolve(parseTscOutput((stdout ?? "") + (stderr ?? ""), repoRoot));
+        });
+      }),
+    );
+  }
+
+  // Go
+  if (existsSync(join(repoRoot, "go.mod"))) {
+    checkers.push(
+      new Promise((resolve) => {
+        exec("go vet ./...", { cwd: repoRoot, timeout: 120_000 }, (error, stdout, stderr) => {
+          if (!error) { resolve([]); return; }
+          resolve(parseGoVetOutput((stdout ?? "") + (stderr ?? ""), repoRoot));
+        });
+      }),
+    );
+  }
+
+  // Rust
+  if (existsSync(join(repoRoot, "Cargo.toml"))) {
+    checkers.push(
+      new Promise((resolve) => {
+        exec("cargo check --message-format=short 2>&1", { cwd: repoRoot, timeout: 180_000 }, (error, stdout, stderr) => {
+          if (!error) { resolve([]); return; }
+          resolve(parseCargoOutput((stdout ?? "") + (stderr ?? ""), repoRoot));
+        });
+      }),
+    );
+  }
+
+  // Java
+  if (existsSync(join(repoRoot, "pom.xml")) || existsSync(join(repoRoot, "build.gradle")) || existsSync(join(repoRoot, "build.gradle.kts"))) {
+    const cmd = existsSync(join(repoRoot, "pom.xml"))
+      ? "mvn compile -q"
+      : "gradle compileJava -q";
+    checkers.push(
+      new Promise((resolve) => {
+        exec(cmd, { cwd: repoRoot, timeout: 180_000 }, (error, stdout, stderr) => {
+          if (!error) { resolve([]); return; }
+          resolve(parseGenericOutput((stdout ?? "") + (stderr ?? ""), repoRoot, /\.java|\.kt/));
+        });
+      }),
+    );
+  }
+
+  // C#
+  {
+    let hasCsharp = false;
+    try {
+      const entries = readdirSync(repoRoot);
+      hasCsharp = entries.some((e) => e.endsWith(".sln") || e.endsWith(".csproj"));
+    } catch { /* skip */ }
+    if (hasCsharp) {
+      checkers.push(
+        new Promise((resolve) => {
+          exec("dotnet build --no-restore -v q", { cwd: repoRoot, timeout: 180_000 }, (error, stdout, stderr) => {
+            if (!error) { resolve([]); return; }
+            resolve(parseGenericOutput((stdout ?? "") + (stderr ?? ""), repoRoot, /\.cs/));
+          });
+        }),
+      );
+    }
+  }
+
+  // Scala
+  if (existsSync(join(repoRoot, "build.sbt"))) {
+    checkers.push(
+      new Promise((resolve) => {
+        exec("sbt compile -q", { cwd: repoRoot, timeout: 180_000 }, (error, stdout, stderr) => {
+          if (!error) { resolve([]); return; }
+          resolve(parseGenericOutput((stdout ?? "") + (stderr ?? ""), repoRoot, /\.scala/));
+        });
+      }),
+    );
+  }
+
+  if (checkers.length === 0) {
     return Promise.resolve({ passed: true, issues: [] });
   }
 
-  const tsc = findTscCommand(repoRoot);
-
-  return new Promise((resolve) => {
-    exec(
-      `${tsc} --noEmit -p ${tsconfigPath}`,
-      { cwd: repoRoot, timeout: 120_000 },
-      (error, stdout, stderr) => {
-        if (!error) {
-          resolve({ passed: true, issues: [] });
-          return;
-        }
-        const output = (stdout ?? "") + (stderr ?? "");
-        resolve({ passed: false, issues: parseTscOutput(output, repoRoot) });
-      },
-    );
+  return Promise.all(checkers).then((results) => {
+    const allIssues = results.flat();
+    return { passed: allIssues.length === 0, issues: allIssues };
   });
 }

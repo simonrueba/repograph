@@ -5,19 +5,31 @@ import {
   resolveModulePath,
   ScipTypescriptIndexer,
   ScipPythonIndexer,
+  ScipGoIndexer,
+  ScipRustIndexer,
+  ScipJavaIndexer,
+  ScipCsharpIndexer,
+  ScipRubyIndexer,
   ScipParser,
   detectProjects,
+  type Indexer,
 } from "ariadne-core";
 import { getContext } from "../lib/context";
 import { output } from "../lib/output";
 
-const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".py"]);
+const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs", ".java", ".kt", ".scala", ".cs", ".rb"]);
 const SKIP_DIRS = new Set(["node_modules", "dist", ".ariadne", ".git"]);
 
 function languageFromExt(ext: string): string {
   if ([".ts", ".tsx"].includes(ext)) return "typescript";
   if ([".js", ".jsx"].includes(ext)) return "javascript";
   if (ext === ".py") return "python";
+  if (ext === ".go") return "go";
+  if (ext === ".rs") return "rust";
+  if ([".java", ".kt"].includes(ext)) return "java";
+  if (ext === ".scala") return "scala";
+  if (ext === ".cs") return "csharp";
+  if (ext === ".rb") return "ruby";
   return "unknown";
 }
 
@@ -120,12 +132,20 @@ export async function runIndex(args: string[]): Promise<void> {
 
   // Run SCIP indexers per project
   const indexerResults: { indexer: string; result: unknown }[] = [];
-  const tsIndexer = new ScipTypescriptIndexer();
-  const pyIndexer = new ScipPythonIndexer();
+  const indexerRegistry = new Map<string, Indexer>([
+    ["typescript", new ScipTypescriptIndexer()],
+    ["python", new ScipPythonIndexer()],
+    ["go", new ScipGoIndexer()],
+    ["rust", new ScipRustIndexer()],
+    ["java", new ScipJavaIndexer()],
+    ["scala", new ScipJavaIndexer()],
+    ["csharp", new ScipCsharpIndexer()],
+    ["ruby", new ScipRubyIndexer()],
+  ]);
 
   // Helper: run a SCIP indexer, parse, and ingest — with proper error surfacing
   async function runScipIndexer(
-    indexer: { name: string; run: typeof tsIndexer.run },
+    indexer: Indexer,
     projectId?: string,
     targetDir?: string,
   ): Promise<void> {
@@ -162,24 +182,14 @@ export async function runIndex(args: string[]): Promise<void> {
     // Multi-project path: iterate detected projects
     for (const project of projects) {
       const targetDir = project.root; // already absolute from detectProjects
+      const indexer = indexerRegistry.get(project.language);
 
-      if (project.language === "typescript" && tsIndexer.canIndex(targetDir)) {
+      if (indexer && indexer.canIndex(targetDir)) {
         try {
-          await runScipIndexer(tsIndexer, project.projectId, targetDir);
+          await runScipIndexer(indexer, project.projectId, targetDir);
         } catch (err: any) {
           indexerResults.push({
-            indexer: "scip-typescript",
-            result: { error: err.message, projectId: project.projectId },
-          });
-        }
-      }
-
-      if (project.language === "python" && pyIndexer.canIndex(targetDir)) {
-        try {
-          await runScipIndexer(pyIndexer, project.projectId, targetDir);
-        } catch (err: any) {
-          indexerResults.push({
-            indexer: "scip-python",
+            indexer: indexer.name,
             result: { error: err.message, projectId: project.projectId },
           });
         }
@@ -187,31 +197,24 @@ export async function runIndex(args: string[]): Promise<void> {
     }
   } else {
     // Fallback: single-project behavior at repo root
-    if (tsIndexer.canIndex(ctx.repoRoot)) {
-      try {
-        await runScipIndexer(tsIndexer);
-      } catch (err: any) {
-        indexerResults.push({
-          indexer: "scip-typescript",
-          result: { error: err.message },
-        });
+    let anyCanIndex = false;
+    for (const [, indexer] of indexerRegistry) {
+      if (indexer.canIndex(ctx.repoRoot)) {
+        anyCanIndex = true;
+        try {
+          await runScipIndexer(indexer);
+        } catch (err: any) {
+          indexerResults.push({
+            indexer: indexer.name,
+            result: { error: err.message },
+          });
+        }
       }
     }
 
-    if (pyIndexer.canIndex(ctx.repoRoot)) {
-      try {
-        await runScipIndexer(pyIndexer);
-      } catch (err: any) {
-        indexerResults.push({
-          indexer: "scip-python",
-          result: { error: err.message },
-        });
-      }
-    }
-
-    if (!tsIndexer.canIndex(ctx.repoRoot) && !pyIndexer.canIndex(ctx.repoRoot)) {
+    if (!anyCanIndex) {
       warnings.push(
-        "no SCIP-compatible project detected (need tsconfig.json, pyproject.toml, or setup.py) " +
+        "no SCIP-compatible project detected (need tsconfig.json, pyproject.toml, setup.py, go.mod, or Cargo.toml) " +
         "— only structural imports indexed, symbol search will be empty",
       );
     }

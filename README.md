@@ -6,7 +6,7 @@ No LLMs involved — just static analysis.
 
 ## What it does
 
-- **Indexes** your codebase into a SQLite graph of symbols, references, imports, and definitions
+- **Indexes** your codebase (TypeScript, Python, Go, Rust, Java/Kotlin, Scala, C#, Ruby) into a SQLite graph of symbols, references, imports, and definitions
 - **Queries** let you search symbols, jump to definitions, find all references, trace impact of changes, and explore call graphs
 - **Verifies** repo consistency: stale index detection, empty index detection, missing test runs, type errors, and architecture boundary violations
 - **Indexes non-code artifacts** — `.env` vars, `package.json` scripts, SQL migrations, OpenAPI schemas — and links them to source references
@@ -103,7 +103,7 @@ All commands output JSON. Symbol IDs are SCIP symbol strings returned by `search
 | `status` | Index stats (file count, symbol count, edge count, dirty count) |
 | `dirty mark <path>` | Mark a file as needing re-index |
 | `ledger log <event> <json>` | Append event to execution ledger |
-| `doctor [path]` | Check prerequisites (Bun, Node, scip-typescript, scip-python) and warn about stale legacy directories |
+| `doctor [path]` | Check prerequisites (Bun, Node, SCIP indexers for all languages) and warn about stale legacy directories |
 
 ## MCP server
 
@@ -146,8 +146,8 @@ The MCP server starts gracefully even if `.ariadne/` doesn't exist yet — it cr
 ### What the hooks do
 
 - **Pre-edit impact hook** (`Edit|Write` PreToolUse): runs `ariadne impact` before every source file edit and injects the blast radius (changed symbols, dependent files, recommended tests) as context so Claude sees what will be affected. Silently skips test files, non-source files, and uninitialized projects. ~240ms latency.
-- **Post-edit hook** (`Edit|Write` PostToolUse): marks edited source files (`.ts/.tsx/.js/.jsx/.py`) dirty, runs `ariadne update --files <path>` for fast single-file updates (no full repo walk), logs the edit to the ledger. Non-source files (README, config, etc.) are skipped to avoid false-positive freshness failures.
-- **Post-test hook** (`Bash` PostToolUse): detects test runner commands (vitest, jest, pytest, bun test, mocha, ava, cargo test, go test, playwright), logs `test_run` to the ledger
+- **Post-edit hook** (`Edit|Write` PostToolUse): marks edited source files dirty, runs `ariadne update --files <path>` for fast single-file updates (no full repo walk), logs the edit to the ledger. Non-source files (README, config, etc.) are skipped to avoid false-positive freshness failures.
+- **Post-test hook** (`Bash` PostToolUse): detects test runner commands (vitest, jest, pytest, bun test, mocha, ava, cargo test, go test, mvn test, dotnet test, sbt test, bundle exec, playwright), logs `test_run` to the ledger
 - **Stop hook**: runs `ariadne update` (auto-triggers SCIP when dirty source files exist), then `ariadne verify`. On failure, outputs `{"decision":"block","reason":"..."}` to prevent Claude from stopping until issues are fixed
 
 The stop hook uses atomic `mkdir`-based locking to prevent concurrent runs, checks `stop_hook_active` from stdin to prevent infinite loops, and has a 120s stale lock timeout.
@@ -161,7 +161,7 @@ All hooks guard against missing `.ariadne/` — they silently exit if the projec
 1. **Empty index** — fails if zero files are indexed (prevents vacuous pass on uninitialized projects)
 2. **Index freshness** — checks the dirty set (files marked changed by hooks or `update`), filtering to source files only. Fails if any dirty source files exist that haven't been covered by a SCIP index pass. Non-source files are ignored since SCIP can't index them.
 3. **Missing test runs** — checks the ledger for a `test_run` event after the most recent `edit`. Fails if no tests were run after editing.
-4. **Typecheck** — runs `tsc --noEmit` against the repo's `tsconfig.json`. Fails on any type errors. On failure, includes recommendations with `ariadne query impact` and `ariadne query search` commands for the affected files and identifiers. Skipped if no `tsconfig.json` exists.
+4. **Typecheck** — runs language-appropriate type checkers (`tsc --noEmit`, `go vet`, `cargo check`, `mvn compile`, `sbt compile`, `dotnet build`) against detected projects. Fails on any type errors. On failure, includes recommendations with `ariadne query impact` and `ariadne query search` commands for the affected files and identifiers. Skipped if no supported project is detected.
 5. **Architecture boundaries** — reads `ariadne.boundaries.json` and checks all `imports` edges against layer allowlists. Fails if any file imports from a layer not in its `canImport` list. Skipped if no config file exists.
 
 ## Architecture
@@ -169,8 +169,8 @@ All hooks guard against missing `.ariadne/` — they silently exit if the projec
 ```mermaid
 graph TD
     subgraph Indexing Pipeline
-        A[Source Files<br>.ts .tsx .js .jsx .py] --> B[Structural Pass<br>import/export extraction]
-        A --> C[SCIP Pass<br>scip-typescript / scip-python]
+        A[Source Files<br>.ts .tsx .js .jsx .py .go .rs<br>.java .kt .scala .cs .rb] --> B[Structural Pass<br>import/export extraction]
+        A --> C[SCIP Pass<br>scip-typescript / scip-python<br>scip-go / rust-analyzer<br>scip-java / scip-dotnet / scip-ruby]
         D[Artifact Files<br>.env package.json *.sql] --> E[Artifact Pass<br>pseudo-symbol extraction]
     end
 
@@ -199,15 +199,15 @@ graph TD
 
 Three-pass pipeline:
 
-1. **Structural pass** (instant, per-file) — regex-based extraction of `import`/`export`/`from` statements, including side-effect imports (`import "module"`), dynamic imports (`import("module")`), and Python relative imports (`from . import`). Creates file-level `imports` edges with resolved file paths (e.g. `./utils` → `src/utils.ts`) so edges point to actual file nodes. Runs on every `update`.
-2. **SCIP pass** (slower, full project) — runs `scip-typescript` or `scip-python` per detected sub-project, producing a protobuf index. The parser decodes it and extracts symbols, occurrences (with line:col ranges), and definition/reference roles. Creates symbol-level `defines`, `references`, and approximate `calls` edges (via enclosing-definition heuristic). Runs on `index`, `update` (when dirty source files exist), and `update --full` (forced).
+1. **Structural pass** (instant, per-file) — regex-based extraction of `import`/`export`/`from`/`use`/`require`/`using` statements across all supported languages. Creates file-level `imports` edges with resolved file paths (e.g. `./utils` → `src/utils.ts`) so edges point to actual file nodes. Runs on every `update`.
+2. **SCIP pass** (slower, full project) — runs the appropriate SCIP indexer per detected sub-project, producing a protobuf index. The parser decodes it and extracts symbols, occurrences (with line:col ranges), and definition/reference roles. Creates symbol-level `defines`, `references`, and approximate `calls` edges (via enclosing-definition heuristic). Runs on `index`, `update` (when dirty source files exist), and `update --full` (forced).
 3. **Artifact pass** (instant, per-file) — extracts pseudo-symbols from non-code files: `.env` vars (`env_var`), `package.json`/`tsconfig.json` keys (`config_key`), SQL migrations (`table`, `index`), and OpenAPI specs (`api_endpoint`, `api_schema`). Scans dirty source files for references (`process.env.KEY`, `os.environ`, SQL table names) and creates `config_ref` edges. Runs on every `update`.
 
 All passes write to the same SQLite database (`.ariadne/index.db`). The database uses WAL mode, `busy_timeout=5000` for concurrent access from hooks, and transactions for atomic SCIP ingestion. Bulk ingestion uses index-drop/recreate and `PRAGMA synchronous=OFF` for faster writes, and skips unchanged files by content hash comparison.
 
 ### Multi-project support
 
-Ariadne auto-detects sub-projects in monorepos by scanning for `tsconfig.json` and Python project files. Each sub-project is indexed independently with correct path prefixing so that SCIP-relative paths map correctly to repo-root-relative file paths.
+Ariadne auto-detects sub-projects in monorepos by scanning for language-specific config files (`tsconfig.json`, `pyproject.toml`/`setup.py`, `go.mod`, `Cargo.toml`, `pom.xml`/`build.gradle`, `build.sbt`, `.sln`/`.csproj`, `Gemfile`). Each sub-project is indexed independently with correct path prefixing so that SCIP-relative paths map correctly to repo-root-relative file paths.
 
 ### Module graph modes
 
@@ -227,7 +227,7 @@ packages/
     src/
       store/       SQLite schema, queries, transactions
       scip/        protobuf parser + SCIP types + call graph derivation
-      indexers/    scip-typescript, scip-python, import extractor, project detector, artifact extractor, config ref scanner
+      indexers/    scip-typescript, scip-python, scip-go, scip-rust, scip-java, scip-csharp, scip-ruby, import extractor, project detector, artifact extractor, config ref scanner
       graph/       refs, impact analysis, call graph, module graph (import/semantic/hybrid), shared utils
       verify/      gatekeeper engine + checks (freshness, tests, typecheck, boundaries)
       ledger/      execution event log
@@ -259,7 +259,7 @@ Hook latency stays under 200ms — fast enough to run on every edit without noti
 
 ```bash
 bun install
-bun test                  # 370+ tests across 23 files
+bun test                  # 440+ tests across 23 files
 bunx tsc --noEmit         # type-check all packages
 bun run packages/cli/src/index.ts doctor  # check prerequisites
 ```
@@ -267,13 +267,33 @@ bun run packages/cli/src/index.ts doctor  # check prerequisites
 ## Requirements
 
 - [Bun](https://bun.sh) >= 1.0
-- `scip-typescript` (for TypeScript SCIP indexing — optional, structural imports still work without it)
-- `scip-python` (for Python SCIP indexing — optional)
+
+SCIP indexers are optional — structural imports still work without them. Install the ones for your languages:
+
+| Language | SCIP Indexer | Install |
+|----------|-------------|---------|
+| TypeScript / JavaScript | `@sourcegraph/scip-typescript` | `npx @sourcegraph/scip-typescript` (auto-downloaded) |
+| Python | `scip-python` | `uvx scip-python` or `pip install scip-python` |
+| Go | `scip-go` | `go install github.com/sourcegraph/scip-go@latest` |
+| Rust | `rust-analyzer` | `rustup component add rust-analyzer` |
+| Java / Kotlin / Scala | `scip-java` | `coursier install scip-java` |
+| C# | `scip-dotnet` | `dotnet tool install --global scip-dotnet` |
+| Ruby | `scip-ruby` | `gem install scip-ruby` |
+
+Run `ariadne doctor` to check which indexers are available.
 
 ## Supported languages
 
-- TypeScript / JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`) — full SCIP + structural import support
-- Python (`.py`) — full SCIP + structural import support
+| Language | Extensions | Structural imports | SCIP symbols | Type checker | Env var detection |
+|----------|-----------|-------------------|-------------|-------------|------------------|
+| TypeScript / JavaScript | `.ts` `.tsx` `.js` `.jsx` | ES modules, CommonJS, dynamic imports | scip-typescript | `tsc --noEmit` | `process.env`, `import.meta.env` |
+| Python | `.py` | `import`, `from ... import`, relative imports | scip-python | — | `os.environ`, `os.getenv` |
+| Go | `.go` | `import "pkg"`, block imports | scip-go | `go vet` | `os.Getenv`, `os.LookupEnv` |
+| Rust | `.rs` | `use`, `mod`, `extern crate` | rust-analyzer | `cargo check` | `env::var`, `env!` |
+| Java / Kotlin | `.java` `.kt` | `import pkg.Class`, static imports | scip-java | `mvn compile` / `gradle` | `System.getenv` |
+| Scala | `.scala` | `import pkg._`, selective imports | scip-java | `sbt compile` | `sys.env` |
+| C# | `.cs` | `using Namespace`, static/aliased usings | scip-dotnet | `dotnet build` | `Environment.GetEnvironmentVariable` |
+| Ruby | `.rb` | `require`, `require_relative`, `load` | scip-ruby | — | `ENV[]`, `ENV.fetch` |
 
 ### Language roadmap
 
@@ -281,11 +301,9 @@ SCIP indexers exist for these languages and could be integrated:
 
 | Language | SCIP Indexer | Status |
 |----------|-------------|--------|
-| Go | [scip-go](https://github.com/sourcegraph/scip-go) | Planned |
-| Rust | [rust-analyzer](https://rust-analyzer.github.io/) | Planned |
-| Java / Kotlin | [scip-java](https://github.com/sourcegraph/scip-java) | Planned |
-| C# | [scip-dotnet](https://github.com/sourcegraph/scip-dotnet) | Planned |
-| Ruby | [scip-ruby](https://github.com/sourcegraph/scip-ruby) | Planned |
+| C / C++ | [scip-clang](https://github.com/sourcegraph/scip-clang) | Not yet integrated |
+| PHP | [scip-php](https://github.com/davidrjenni/scip-php) | Not yet integrated |
+| Swift | sourcekit-lsp SCIP export | Not yet integrated |
 
 Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
