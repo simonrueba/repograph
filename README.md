@@ -228,6 +228,20 @@ bun run packages/cli/src/index.ts doctor  # check prerequisites
 - TypeScript / JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`) — full SCIP + structural import support
 - Python (`.py`) — full SCIP + structural import support
 
+### Language roadmap
+
+SCIP indexers exist for these languages and could be integrated:
+
+| Language | SCIP Indexer | Status |
+|----------|-------------|--------|
+| Go | [scip-go](https://github.com/sourcegraph/scip-go) | Planned |
+| Rust | [rust-analyzer](https://rust-analyzer.github.io/) | Planned |
+| Java / Kotlin | [scip-java](https://github.com/sourcegraph/scip-java) | Planned |
+| C# | [scip-dotnet](https://github.com/sourcegraph/scip-dotnet) | Planned |
+| Ruby | [scip-ruby](https://github.com/sourcegraph/scip-ruby) | Planned |
+
+Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE)
