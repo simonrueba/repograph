@@ -27,8 +27,9 @@ fi
 # Read stdin once and extract file_path using native bash parameter expansion
 STDIN_JSON="$(cat)"
 tmp="${STDIN_JSON#*\"file_path\":\"}"
+# If the pattern didn't match, tmp equals STDIN_JSON — no file_path present
+[[ "$tmp" == "$STDIN_JSON" ]] && { exit 0; }
 FILE_PATH="${tmp%%\"*}"
-[[ "$FILE_PATH" == "$STDIN_JSON" ]] && FILE_PATH=""
 
 # Guard: need a file path to analyze
 [ -n "$FILE_PATH" ] || exit 0
