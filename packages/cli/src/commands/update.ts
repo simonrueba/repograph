@@ -385,6 +385,20 @@ export async function runUpdate(args: string[]): Promise<void> {
       for (const projectId of succeededProjectIds) {
         ctx.store.clearDirtyByPrefix(projectId);
       }
+      // Clear stale entries that don't match any project prefix:
+      // 1. Absolute-path entries (legacy from old hooks that passed absolute paths)
+      // 2. Root-level files (e.g. vitest.config.ts) outside any project dir
+      const remainingDirty = ctx.store.getDirtyPaths();
+      const projectPrefixes = projects.map((p) => {
+        const id = p.projectId;
+        return (id === "." || id === "") ? null : (id.endsWith("/") ? id : id + "/");
+      }).filter(Boolean) as string[];
+      for (const entry of remainingDirty) {
+        const inProject = projectPrefixes.some((pfx) => entry.path.startsWith(pfx));
+        if (!inProject) {
+          ctx.store.clearDirty(entry.path);
+        }
+      }
     }
   }
 

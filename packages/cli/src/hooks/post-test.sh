@@ -19,8 +19,9 @@ fi
 # Read hook input from stdin and extract command using native bash parameter expansion
 INPUT=$(cat)
 tmp="${INPUT#*\"command\":\"}"
+# If the pattern didn't match, tmp equals INPUT — no command present
+[[ "$tmp" == "$INPUT" ]] && exit 0
 COMMAND="${tmp%%\"*}"
-[[ "$COMMAND" == "$INPUT" ]] && COMMAND=""
 
 # Only log if the command looks like a test runner
 echo "$COMMAND" | grep -qiE '(vitest|jest|pytest|bun test|mocha|ava|cargo test|go test|npm test|npx vitest|npx jest|playwright)' && {

@@ -27,6 +27,14 @@ export function runDirty(args: string[]): void {
       output("dirty-list", { count: paths.length, paths });
       break;
     }
+    case "count": {
+      const ctx = getContext(rootArg);
+      const count = ctx.store.getDirtyCount();
+      ctx.db.close();
+      // Raw number on stdout — designed for shell scripting (e.g. bg index trigger)
+      process.stdout.write(String(count));
+      break;
+    }
     case "clear": {
       const ctx = getContext(rootArg);
       ctx.store.clearAllDirty();
@@ -37,7 +45,7 @@ export function runDirty(args: string[]): void {
     default:
       outputError(
         "UNKNOWN_SUBCOMMAND",
-        `Unknown dirty subcommand: ${subcommand}. Usage: ariadne dirty <mark|list|clear>`,
+        `Unknown dirty subcommand: ${subcommand}. Usage: ariadne dirty <mark|list|count|clear>`,
       );
   }
 }
