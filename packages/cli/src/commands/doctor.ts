@@ -127,6 +127,18 @@ function checkWritePermission(repoRoot: string): DoctorCheck {
   }
 }
 
+function checkLegacyDir(repoRoot: string): DoctorCheck {
+  const legacyDir = join(repoRoot, ".repograph");
+  if (existsSync(legacyDir)) {
+    return {
+      name: "legacy_dir",
+      status: "warn",
+      detail: ".repograph/ directory found — this is stale from before the rename. Safe to delete: rm -rf .repograph/",
+    };
+  }
+  return { name: "legacy_dir", status: "ok", detail: "no legacy .repograph/ directory" };
+}
+
 function checkIndexDb(repoRoot: string): DoctorCheck {
   const dbPath = join(repoRoot, ".ariadne", "index.db");
   if (!existsSync(dbPath)) {
@@ -150,6 +162,7 @@ export function runDoctor(args: string[]): void {
     checkTsconfigDetection(repoRoot),
     checkWritePermission(repoRoot),
     checkIndexDb(repoRoot),
+    checkLegacyDir(repoRoot),
   ];
 
   const allOk = checks.every((c) => c.status === "ok");
