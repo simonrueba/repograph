@@ -92,7 +92,7 @@ All commands output JSON. Symbol IDs are SCIP symbol strings returned by `search
 | `setup [path] [--quick]` | One-command setup: init + index + generate hooks & MCP config. `--quick` skips SCIP. |
 | `init [path]` | Create `.ariadne/` directory and SQLite database |
 | `index [path] [--structural-only]` | Full index: structural imports + SCIP analysis. `--structural-only` skips SCIP. |
-| `update [--full] [--files path...]` | Incremental update: structural imports + auto SCIP when dirty source files exist. `--files` processes only the specified files (used by hooks for fast single-file updates). `--full` forces SCIP even when clean. |
+| `update [--full] [--reingest] [--files path...]` | Incremental update: structural imports + auto SCIP when dirty source files exist. `--files` processes only the specified files (used by hooks for fast single-file updates). `--full` forces SCIP even when clean. `--reingest` forces SCIP re-ingestion even when file contents haven't changed (needed after package renames where symbol IDs change). |
 | `query search <query>` | Fuzzy search symbols by name |
 | `query def <symbol-id>` | Get definition location, docs, and code snippet |
 | `query refs <symbol-id>` | Find all references across the codebase |
@@ -103,7 +103,7 @@ All commands output JSON. Symbol IDs are SCIP symbol strings returned by `search
 | `status` | Index stats (file count, symbol count, edge count, dirty count) |
 | `dirty mark <path>` | Mark a file as needing re-index |
 | `ledger log <event> <json>` | Append event to execution ledger |
-| `doctor [path]` | Check prerequisites (Bun, Node, scip-typescript, scip-python) |
+| `doctor [path]` | Check prerequisites (Bun, Node, scip-typescript, scip-python) and warn about stale legacy directories |
 
 ## MCP server
 
@@ -212,7 +212,7 @@ packages/
 
 ```bash
 bun install
-bun test                  # 360+ tests across 23 files
+bun test                  # 370+ tests across 23 files
 bunx tsc --noEmit         # type-check all packages
 bun run packages/cli/src/index.ts doctor  # check prerequisites
 ```
