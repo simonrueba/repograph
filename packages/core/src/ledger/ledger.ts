@@ -1,4 +1,4 @@
-import type { RepographDB } from "../store/db";
+import type { AriadneDB } from "../store/db";
 
 export interface LedgerEntry {
   id: number;
@@ -8,7 +8,7 @@ export interface LedgerEntry {
 }
 
 export class Ledger {
-  constructor(private db: RepographDB) {}
+  constructor(private db: AriadneDB) {}
 
   log(event: string, data: Record<string, unknown>): void {
     this.db

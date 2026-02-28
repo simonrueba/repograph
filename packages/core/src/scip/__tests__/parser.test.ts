@@ -4,7 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { decodeScipRange, packRange, SymbolRole } from "../types";
 import { ScipParser } from "../parser";
-import { createDatabase, type RepographDB } from "../../store/db";
+import { createDatabase, type AriadneDB } from "../../store/db";
 import { StoreQueries } from "../../store/queries";
 
 // ── types.ts unit tests ────────────────────────────────────────────────
@@ -121,7 +121,7 @@ describe("ScipParser", () => {
 // ── parser.ts ingest() unit test with mock SCIP data ───────────────────
 
 describe("ScipParser.ingest", () => {
-  let db: RepographDB;
+  let db: AriadneDB;
   let store: StoreQueries;
   const tempDirs: string[] = [];
 

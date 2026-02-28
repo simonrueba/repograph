@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, renameSync } from "fs";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { join, basename } from "path";
 import type { Indexer, IndexResult } from "./types";
 
@@ -28,8 +28,9 @@ export class ScipPythonIndexer implements Indexer {
     const start = performance.now();
 
     try {
-      execSync(
-        `uvx scip-python index ${cwd} --project-name=${projectName} --output=${cachedPath}`,
+      execFileSync(
+        "uvx",
+        ["scip-python", "index", cwd, `--project-name=${projectName}`, `--output=${cachedPath}`],
         {
           cwd,
           timeout: 120_000,

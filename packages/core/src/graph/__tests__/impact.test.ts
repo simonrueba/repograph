@@ -2,12 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { createDatabase, type RepographDB } from "../../store/db";
+import { createDatabase, type AriadneDB } from "../../store/db";
 import { StoreQueries } from "../../store/queries";
 import { ImpactAnalyzer, type ImpactResult } from "../impact";
 
 describe("ImpactAnalyzer", () => {
-  let db: RepographDB;
+  let db: AriadneDB;
   let queries: StoreQueries;
   let analyzer: ImpactAnalyzer;
   const tempDirs: string[] = [];

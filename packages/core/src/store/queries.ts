@@ -1,4 +1,4 @@
-import type { RepographDB } from "./db";
+import type { AriadneDB } from "./db";
 import { INGEST_INDEXES_SQL, DROP_INGEST_INDEXES_SQL } from "./schema";
 
 // ── Record types ─────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ export interface ProjectRecord {
 // ── Query layer ──────────────────────────────────────────────────────
 
 export class StoreQueries {
-  constructor(private db: RepographDB) {}
+  constructor(private db: AriadneDB) {}
 
   /** Run a callback inside a BEGIN/COMMIT transaction. Rolls back on error. */
   transaction(fn: () => void): void {
