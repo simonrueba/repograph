@@ -37,15 +37,15 @@ FILE_PATH="${tmp%%\"*}"
 # Make path relative to repo root (impact expects relative paths)
 REL_PATH="${FILE_PATH#$REPO_ROOT/}"
 
-# Guard: skip non-source files (only analyze .ts, .tsx, .js, .jsx, .py)
+# Guard: skip non-source files (only analyze supported languages)
 case "$REL_PATH" in
-  *.ts|*.tsx|*.js|*.jsx|*.py) ;;
+  *.ts|*.tsx|*.js|*.jsx|*.py|*.go|*.rs|*.java|*.kt|*.scala|*.cs|*.rb) ;;
   *) exit 0 ;;
 esac
 
 # Guard: skip test files — they are leaves, no blast radius
 case "$REL_PATH" in
-  *.test.*|*.spec.*|*__tests__/*|test_*|*_test.py) exit 0 ;;
+  *.test.*|*.spec.*|*__tests__/*|test_*|*_test.py|*_test.go|*_test.rs|*Test.java|*Test.kt|*Test.scala|*Spec.scala|*Tests.cs|*_test.rb|*_spec.rb) exit 0 ;;
 esac
 
 # Run impact analysis with --format=hook to get hookSpecificOutput directly

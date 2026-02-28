@@ -5,16 +5,22 @@ import {
   resolveModulePath,
   ScipTypescriptIndexer,
   ScipPythonIndexer,
+  ScipGoIndexer,
+  ScipRustIndexer,
+  ScipJavaIndexer,
+  ScipCsharpIndexer,
+  ScipRubyIndexer,
   ScipParser,
   detectProjects,
   extractArtifacts,
   scanConfigRefs,
   type ArtifactSymbol,
+  type Indexer,
 } from "ariadne-core";
 import { getContext } from "../lib/context";
 import { output } from "../lib/output";
 
-const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".py"]);
+const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs", ".java", ".kt", ".scala", ".cs", ".rb"]);
 const SKIP_DIRS = new Set(["node_modules", "dist", ".ariadne", ".git"]);
 const ARTIFACT_GLOBS = new Set([".env", "package.json", "tsconfig.json"]);
 const ARTIFACT_EXTENSIONS = new Set([".sql", ".yaml", ".yml"]);
@@ -23,6 +29,12 @@ function languageFromExt(ext: string): string {
   if ([".ts", ".tsx"].includes(ext)) return "typescript";
   if ([".js", ".jsx"].includes(ext)) return "javascript";
   if (ext === ".py") return "python";
+  if (ext === ".go") return "go";
+  if (ext === ".rs") return "rust";
+  if ([".java", ".kt"].includes(ext)) return "java";
+  if (ext === ".scala") return "scala";
+  if (ext === ".cs") return "csharp";
+  if (ext === ".rb") return "ruby";
   return "unknown";
 }
 
@@ -251,12 +263,20 @@ export async function runUpdate(args: string[]): Promise<void> {
   const projects = shouldRunScip ? detectProjects(ctx.repoRoot) : [];
 
   if (shouldRunScip) {
-    const tsIndexer = new ScipTypescriptIndexer();
-    const pyIndexer = new ScipPythonIndexer();
+    const indexerRegistry = new Map<string, Indexer>([
+      ["typescript", new ScipTypescriptIndexer()],
+      ["python", new ScipPythonIndexer()],
+      ["go", new ScipGoIndexer()],
+      ["rust", new ScipRustIndexer()],
+      ["java", new ScipJavaIndexer()],
+      ["scala", new ScipJavaIndexer()],
+      ["csharp", new ScipCsharpIndexer()],
+      ["ruby", new ScipRubyIndexer()],
+    ]);
 
     // Helper: run a SCIP indexer safely — surface errors instead of swallowing
     async function runScipIndexer(
-      indexer: { name: string; run: typeof tsIndexer.run },
+      indexer: Indexer,
       projectId?: string,
       targetDir?: string,
     ): Promise<void> {
@@ -328,24 +348,14 @@ export async function runUpdate(args: string[]): Promise<void> {
         }
 
         const targetDir = project.root; // already absolute from detectProjects
+        const indexer = indexerRegistry.get(project.language);
 
-        if (project.language === "typescript" && tsIndexer.canIndex(targetDir)) {
+        if (indexer && indexer.canIndex(targetDir)) {
           try {
-            await runScipIndexer(tsIndexer, project.projectId, targetDir);
+            await runScipIndexer(indexer, project.projectId, targetDir);
           } catch (err: any) {
             indexerResults.push({
-              indexer: "scip-typescript",
-              result: { error: err.message, projectId: project.projectId },
-            });
-          }
-        }
-
-        if (project.language === "python" && pyIndexer.canIndex(targetDir)) {
-          try {
-            await runScipIndexer(pyIndexer, project.projectId, targetDir);
-          } catch (err: any) {
-            indexerResults.push({
-              indexer: "scip-python",
+              indexer: indexer.name,
               result: { error: err.message, projectId: project.projectId },
             });
           }
@@ -353,25 +363,16 @@ export async function runUpdate(args: string[]): Promise<void> {
       }
     } else {
       // Fallback: single-project behavior at repo root
-      if (tsIndexer.canIndex(ctx.repoRoot)) {
-        try {
-          await runScipIndexer(tsIndexer);
-        } catch (err: any) {
-          indexerResults.push({
-            indexer: "scip-typescript",
-            result: { error: err.message },
-          });
-        }
-      }
-
-      if (pyIndexer.canIndex(ctx.repoRoot)) {
-        try {
-          await runScipIndexer(pyIndexer);
-        } catch (err: any) {
-          indexerResults.push({
-            indexer: "scip-python",
-            result: { error: err.message },
-          });
+      for (const [, indexer] of indexerRegistry) {
+        if (indexer.canIndex(ctx.repoRoot)) {
+          try {
+            await runScipIndexer(indexer);
+          } catch (err: any) {
+            indexerResults.push({
+              indexer: indexer.name,
+              result: { error: err.message },
+            });
+          }
         }
       }
     }

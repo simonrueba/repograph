@@ -4,12 +4,18 @@ import { extractImports, resolveModulePath } from "ariadne-core";
 import { getContext } from "../lib/context";
 import { output } from "../lib/output";
 
-const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".py"]);
+const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs", ".java", ".kt", ".scala", ".cs", ".rb"]);
 
 function languageFromExt(ext: string): string {
   if ([".ts", ".tsx"].includes(ext)) return "typescript";
   if ([".js", ".jsx"].includes(ext)) return "javascript";
   if (ext === ".py") return "python";
+  if (ext === ".go") return "go";
+  if (ext === ".rs") return "rust";
+  if ([".java", ".kt"].includes(ext)) return "java";
+  if (ext === ".scala") return "scala";
+  if (ext === ".cs") return "csharp";
+  if (ext === ".rb") return "ruby";
   return "unknown";
 }
 

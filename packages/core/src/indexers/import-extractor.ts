@@ -20,6 +20,42 @@ const PY_FROM_IMPORT_RE = /^from\s+([\w.]+)\s+import/gm;
 // Python relative imports: from . import X, from .. import Y
 const PY_REL_IMPORT_RE = /^from\s+(\.+\w*)\s+import/gm;
 
+// Regex patterns for Go
+// Single import: import "fmt"
+const GO_IMPORT_SINGLE_RE = /^import\s+(?:\w+\s+)?["']([^"']+)["']/gm;
+// Block import: import ( "fmt" \n "os" )
+const GO_IMPORT_BLOCK_RE = /^import\s*\(([^)]*)\)/gms;
+// Individual line inside a block import
+const GO_IMPORT_LINE_RE = /(?:\w+\s+)?["']([^"']+)["']/g;
+
+// Regex patterns for Rust
+// use statements: use std::io, use crate::module::Item
+const RUST_USE_RE = /^use\s+([\w:]+(?:::\{[^}]+\})?(?:::\*)?)\s*;/gm;
+// mod declarations: mod my_module;
+const RUST_MOD_RE = /^mod\s+(\w+)\s*;/gm;
+// extern crate: extern crate serde;
+const RUST_EXTERN_RE = /^extern\s+crate\s+(\w+)\s*;/gm;
+
+// Regex patterns for Java/Kotlin
+// import com.example.MyClass; or import static com.example.MyClass.method;
+const JAVA_IMPORT_RE = /^import\s+(?:static\s+)?([\w.]+(?:\.\*)?)\s*;/gm;
+
+// Regex patterns for Scala
+// import scala.collection.mutable or import scala.collection.mutable._
+// import scala.collection.mutable.{Map, Set}
+// Scala imports may or may not have a trailing semicolon
+const SCALA_IMPORT_RE = /^import\s+([\w.]+(?:\.\{[^}]+\}|\._|\.\*)?)\s*;?$/gm;
+
+// Regex patterns for C#
+// using System.IO; or using static System.Math; or using Alias = System.IO;
+const CSHARP_USING_RE = /^using\s+(?:static\s+)?(?:\w+\s*=\s*)?([\w.]+)\s*;/gm;
+
+// Regex patterns for Ruby
+// require "json" or require 'json'
+const RUBY_REQUIRE_RE = /^(?:require|require_relative)\s+['"]([^'"]+)['"]/gm;
+// Explicit load: load "file.rb"
+const RUBY_LOAD_RE = /^load\s+['"]([^'"]+)['"]/gm;
+
 export function extractImports(
   code: string,
   language: string,
@@ -60,6 +96,55 @@ export function extractImports(
     }
     // Relative imports (from . import X, from .. import Y)
     for (const match of code.matchAll(PY_REL_IMPORT_RE)) {
+      imports.push({ specifier: match[1], kind: "import" });
+    }
+  } else if (language === "go") {
+    // Single-line imports: import "fmt"
+    for (const match of code.matchAll(GO_IMPORT_SINGLE_RE)) {
+      imports.push({ specifier: match[1], kind: "import" });
+    }
+    // Block imports: import ( "fmt" \n "os" )
+    for (const blockMatch of code.matchAll(GO_IMPORT_BLOCK_RE)) {
+      const block = blockMatch[1];
+      for (const lineMatch of block.matchAll(GO_IMPORT_LINE_RE)) {
+        imports.push({ specifier: lineMatch[1], kind: "import" });
+      }
+    }
+  } else if (language === "rust") {
+    // use statements: use std::io::Read;
+    for (const match of code.matchAll(RUST_USE_RE)) {
+      imports.push({ specifier: match[1], kind: "import" });
+    }
+    // mod declarations: mod my_module;
+    for (const match of code.matchAll(RUST_MOD_RE)) {
+      imports.push({ specifier: match[1], kind: "import" });
+    }
+    // extern crate: extern crate serde;
+    for (const match of code.matchAll(RUST_EXTERN_RE)) {
+      imports.push({ specifier: match[1], kind: "import" });
+    }
+  } else if (language === "java") {
+    // Java/Kotlin: import com.example.MyClass;
+    for (const match of code.matchAll(JAVA_IMPORT_RE)) {
+      imports.push({ specifier: match[1], kind: "import" });
+    }
+  } else if (language === "scala") {
+    // Scala: import scala.collection.mutable._
+    for (const match of code.matchAll(SCALA_IMPORT_RE)) {
+      imports.push({ specifier: match[1], kind: "import" });
+    }
+  } else if (language === "csharp") {
+    // C#: using System.IO;
+    for (const match of code.matchAll(CSHARP_USING_RE)) {
+      imports.push({ specifier: match[1], kind: "import" });
+    }
+  } else if (language === "ruby") {
+    // Ruby: require "json" or require_relative "lib/helper"
+    for (const match of code.matchAll(RUBY_REQUIRE_RE)) {
+      imports.push({ specifier: match[1], kind: "import" });
+    }
+    // load "file.rb"
+    for (const match of code.matchAll(RUBY_LOAD_RE)) {
       imports.push({ specifier: match[1], kind: "import" });
     }
   }
@@ -107,6 +192,59 @@ export function resolveModulePath(
         ? normalize(join(base, relParts.replace(/\./g, "/")))
         : base;
     }
+    return specifier;
+  }
+
+  if (language === "go") {
+    // Go imports are always package paths (e.g. "fmt", "github.com/user/pkg")
+    // No relative path resolution needed — return as-is
+    return specifier;
+  }
+
+  if (language === "rust") {
+    // Rust use paths: crate::module::Item → resolve relative to crate root
+    if (specifier.startsWith("crate::")) {
+      const parts = specifier.replace(/^crate::/, "").split("::");
+      // Strip the last segment if it looks like a type/fn (capitalized or contains {})
+      const pathParts = parts.filter((p) => !p.includes("{") && !p.includes("*"));
+      return normalize(join("src", pathParts.join("/")));
+    }
+    // mod declarations resolve to sibling files
+    if (!specifier.includes("::")) {
+      const dir = dirname(fromFile);
+      const candidate = normalize(join(dir, specifier + ".rs"));
+      if (knownFiles?.has(candidate)) return candidate;
+      const modCandidate = normalize(join(dir, specifier, "mod.rs"));
+      if (knownFiles?.has(modCandidate)) return modCandidate;
+      return candidate;
+    }
+    // External crate or std — return as-is
+    return specifier;
+  }
+
+  if (language === "java" || language === "scala") {
+    // Java/Scala imports are fully-qualified (e.g. com.example.MyClass) — return as-is
+    return specifier;
+  }
+
+  if (language === "csharp") {
+    // C# using directives are namespace references — return as-is
+    return specifier;
+  }
+
+  if (language === "ruby") {
+    // require_relative resolves relative to the current file
+    if (specifier.startsWith(".")) {
+      const dir = dirname(fromFile);
+      const resolved = normalize(join(dir, specifier));
+      // Try with .rb extension
+      if (knownFiles) {
+        if (knownFiles.has(resolved + ".rb")) return resolved + ".rb";
+        if (knownFiles.has(resolved)) return resolved;
+      }
+      return resolved;
+    }
+    // require "lib/helper" — return as-is (gem or load-path relative)
     return specifier;
   }
 

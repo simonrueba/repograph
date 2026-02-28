@@ -36,6 +36,20 @@ export function scanConfigRefs(
       new RegExp(`os\\.getenv\\(["']${escapeRegex(envVar.name)}["']`),
       // Vite-style: import.meta.env.KEY
       new RegExp(`import\\.meta\\.env\\.${escapeRegex(envVar.name)}\\b`),
+      // Go: os.Getenv("KEY") or os.LookupEnv("KEY")
+      new RegExp(`os\\.Getenv\\(["']${escapeRegex(envVar.name)}["']\\)`),
+      new RegExp(`os\\.LookupEnv\\(["']${escapeRegex(envVar.name)}["']\\)`),
+      // Rust: std::env::var("KEY") or env!("KEY") or env::var("KEY")
+      new RegExp(`env::var\\(["']${escapeRegex(envVar.name)}["']\\)`),
+      new RegExp(`env!\\(["']${escapeRegex(envVar.name)}["']\\)`),
+      // Java/Scala: System.getenv("KEY") or sys.env("KEY")
+      new RegExp(`System\\.getenv\\(["']${escapeRegex(envVar.name)}["']\\)`),
+      new RegExp(`sys\\.env\\(["']${escapeRegex(envVar.name)}["']\\)`),
+      // C#: Environment.GetEnvironmentVariable("KEY")
+      new RegExp(`Environment\\.GetEnvironmentVariable\\(["']${escapeRegex(envVar.name)}["']\\)`),
+      // Ruby: ENV["KEY"] or ENV['KEY'] or ENV.fetch("KEY")
+      new RegExp(`ENV\\[["']${escapeRegex(envVar.name)}["']\\]`),
+      new RegExp(`ENV\\.fetch\\(["']${escapeRegex(envVar.name)}["']`),
     ];
 
     for (const pattern of patterns) {
