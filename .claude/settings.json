@@ -6,6 +6,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "~/.claude/hooks/block-main-branch.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
             "command": "bash packages/cli/src/hooks/pre-edit-impact.sh"
           }
         ]
