@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { createDatabase, type RepographDB } from "../db";
+import { createDatabase, type AriadneDB } from "../db";
 import { StoreQueries } from "../queries";
 
 describe("StoreQueries call edge queries", () => {
-  let db: RepographDB;
+  let db: AriadneDB;
   let queries: StoreQueries;
   const tempDirs: string[] = [];
 

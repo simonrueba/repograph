@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, renameSync } from "fs";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { join } from "path";
 import type { Indexer, IndexResult } from "./types";
 
@@ -27,8 +27,9 @@ export class ScipTypescriptIndexer implements Indexer {
     const start = performance.now();
 
     try {
-      execSync(
-        "npx --yes @sourcegraph/scip-typescript index --infer-tsconfig",
+      execFileSync(
+        "npx",
+        ["--yes", "@sourcegraph/scip-typescript", "index", "--infer-tsconfig"],
         {
           cwd,
           timeout: 120_000,

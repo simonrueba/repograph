@@ -2,7 +2,7 @@
 
 // ── Store ────────────────────────────────────────────────────────────────
 export { createDatabase } from "./store/db";
-export type { RepographDB } from "./store/db";
+export type { AriadneDB } from "./store/db";
 export { SCHEMA_SQL } from "./store/schema";
 export { StoreQueries } from "./store/queries";
 export type {

@@ -1,11 +1,11 @@
 import { Database } from "bun:sqlite";
 import { SCHEMA_SQL } from "./schema";
 
-export type RepographDB = Database;
+export type AriadneDB = Database;
 
 const SCHEMA_VERSION = "5";
 
-export function createDatabase(path: string): RepographDB {
+export function createDatabase(path: string): AriadneDB {
   const db = new Database(path, { create: true });
   db.exec("PRAGMA journal_mode=WAL");
   db.exec("PRAGMA busy_timeout=5000");

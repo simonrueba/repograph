@@ -21,7 +21,7 @@ You should receive a response within 72 hours. We will work with you to understa
 Ariadne is a local development tool that runs on the developer's machine. It:
 - Reads and indexes source code files locally
 - Stores data in a local SQLite database (`.ariadne/`)
-- Does not make network requests
+- Does not make network requests itself. However, optional SCIP indexers invoked via `npx` or `uvx` may download tooling if not already cached.
 - Does not process untrusted input (all input comes from the local filesystem and Claude Code hooks)
 
 ## Supported Versions

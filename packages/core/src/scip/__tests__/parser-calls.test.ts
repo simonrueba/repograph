@@ -4,11 +4,11 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { SymbolRole } from "../types";
 import { ScipParser } from "../parser";
-import { createDatabase, type RepographDB } from "../../store/db";
+import { createDatabase, type AriadneDB } from "../../store/db";
 import { StoreQueries } from "../../store/queries";
 
 describe("ScipParser call edge derivation", () => {
-  let db: RepographDB;
+  let db: AriadneDB;
   let store: StoreQueries;
   const tempDirs: string[] = [];
 

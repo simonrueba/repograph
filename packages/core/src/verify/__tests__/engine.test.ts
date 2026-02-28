@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { createDatabase, type RepographDB } from "../../store/db";
+import { createDatabase, type AriadneDB } from "../../store/db";
 import { StoreQueries } from "../../store/queries";
 import { Ledger } from "../../ledger/ledger";
 import { VerifyEngine, type VerifyReport } from "../engine";
@@ -11,7 +11,7 @@ import { checkMissingTests } from "../checks/missing-tests";
 import { checkTypecheck } from "../checks/typecheck";
 
 describe("VerifyEngine", () => {
-  let db: RepographDB;
+  let db: AriadneDB;
   let queries: StoreQueries;
   let ledger: Ledger;
   let repoRoot: string;
