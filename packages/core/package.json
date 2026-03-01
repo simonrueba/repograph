@@ -2,10 +2,20 @@
   "name": "ariadne-core",
   "version": "0.1.0",
   "type": "module",
-  "main": "src/index.ts",
+  "main": "dist/index.js",
   "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "src/scip/scip.proto"],
+  "engines": {
+    "bun": ">=1.0.0"
+  },
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "build": "bun build src/index.ts --outdir dist --target bun && cp src/scip/scip.proto dist/scip.proto",
     "test": "vitest run"
   },
   "dependencies": {

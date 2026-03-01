@@ -3,17 +3,19 @@
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "ariadne": "src/index.ts"
+    "ariadne": "dist/index.js"
+  },
+  "files": ["dist", "hooks"],
+  "engines": {
+    "bun": ">=1.0.0"
   },
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "build": "bun build src/index.ts --outdir dist --target bun && cp -r src/hooks hooks && cp ../core/src/scip/scip.proto dist/scip.proto",
     "compile": "bun build src/index.ts --compile --outfile dist/ariadne",
     "test": "vitest run"
   },
-  "dependencies": {
-    "ariadne-core": "workspace:*"
-  },
   "devDependencies": {
+    "ariadne-core": "workspace:*",
     "bun-types": "latest"
   }
 }
