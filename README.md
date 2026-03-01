@@ -33,7 +33,7 @@ bun run packages/cli/src/index.ts setup /path/to/your/project
 This creates:
 - `.ariadne/` — SQLite database, hook scripts, SCIP cache
 - `.claude/settings.json` — Claude Code hooks (impact context on edit, auto-update, verify gate)
-- `.mcp.json` — MCP server config (12 read-only tools)
+- `.mcp.json` — MCP server config (14 read-only tools)
 - `ariadne.boundaries.json` — auto-generated architecture boundary config (monorepos)
 
 Then restart Claude Code in your project to pick up the hooks and MCP server.
@@ -183,6 +183,8 @@ Policies are checked automatically by `ariadne verify`. They compare current met
 | `query module-graph [--mode] [--path] [--format]` | File dependency graph (imports, semantic, or hybrid) |
 | `impact <path>... [--max-depth N] [--call-graph]` | Transitive impact analysis with risk scoring. BFS across symbol graph up to N depths (default 5). `--call-graph` includes caller traversal. |
 | `metrics [--snapshot] [--diff]` | Structural metrics: coupling (Ca/Ce/I), dependency cycles, API surface. `--snapshot` saves baseline, `--diff` compares against it. |
+| `context <path>... [--depth N] [--mode]` | Compile agent-friendly context for files: symbols, imports, importers, semantic refs. Modes: `compact` (default), `full`, `symbols-only`. |
+| `preflight <path>... [--depth N]` | Pre-edit blast radius analysis: symbols defined in files, their call sites across the codebase, boundary violations, and risk assessment. |
 | `ci [--base branch] [--markdown] [--root path]` | CI command: runs impact + verify + metrics on changed files vs base branch. Outputs JSON (default) or `--markdown` for PR comments. |
 | `verify` | Run gatekeeper checks including policy enforcement (exit 0 = OK, exit 1 = FAIL) |
 | `status` | Index stats (file count, symbol count, edge count, dirty count) |
@@ -192,7 +194,7 @@ Policies are checked automatically by `ariadne verify`. They compare current met
 
 ## MCP server
 
-The MCP server exposes 12 read-only tools for AI agents:
+The MCP server exposes 14 read-only tools for AI agents:
 
 | Tool | Description |
 |------|-------------|
@@ -208,6 +210,8 @@ The MCP server exposes 12 read-only tools for AI agents:
 | `ariadne.file_symbols` | List all symbols defined in a file |
 | `ariadne.status` | Index stats: files, symbols, dirty count, timestamps |
 | `ariadne.call_graph` | Approximate call graph: callers and callees for a symbol |
+| `ariadne.plan_context` | Agent-friendly file context: symbols, imports, importers, semantic refs via BFS graph traversal |
+| `ariadne.preflight` | Pre-edit blast radius: symbols in target files, call sites, boundary risks, and blast radius summary |
 
 ### Configuration
 
@@ -285,8 +289,8 @@ graph TD
     end
 
     subgraph Consumption
-        F --> H[CLI Queries<br>search · refs · impact<br>call-graph · module-graph<br>transitive-impact · metrics]
-        F --> I[MCP Server<br>12 read-only tools]
+        F --> H[CLI Queries<br>search · refs · impact<br>call-graph · module-graph<br>transitive-impact · metrics<br>context · preflight]
+        F --> I[MCP Server<br>14 read-only tools]
         F --> J[Verify Engine<br>freshness · tests · typecheck<br>boundaries · policies]
     end
 
@@ -326,25 +330,25 @@ Output formats: `json` (default), `dot` (Graphviz), `mermaid`.
 
 ```
 packages/
-  core/     ariadne-core library (497 tests)
+  core/     ariadne-core library (636 tests)
     src/
-      store/       SQLite schema, queries, transactions
+      store/       SQLite schema, queries (7 focused query classes + facade), types, transactions
       scip/        protobuf parser + SCIP types + call graph derivation
       indexers/    scip-typescript, scip-python, scip-go, scip-rust, scip-java, scip-csharp, scip-ruby, import extractor, project detector, artifact extractor, config ref scanner
-      graph/       refs, impact analysis (basic + transitive with risk scoring), call graph, module graph (import/semantic/hybrid), structural metrics (coupling, cycles, API surface), shared utils
+      graph/       refs, impact analysis (basic + transitive with risk scoring), call graph, module graph (import/semantic/hybrid), structural metrics (coupling, cycles, API surface), context compiler, preflight analyzer, shared utils
       verify/      gatekeeper engine + checks (freshness, tests, typecheck, boundaries, policies)
       ledger/      execution event log
   cli/      CLI command router + hooks
     src/
-      commands/    init, setup, index, update, query, verify, status, dirty, doctor, ledger, impact, metrics, ci
+      commands/    init, setup, index, update, query, verify, status, dirty, doctor, ledger, impact, metrics, ci, context, preflight
       hooks/       pre-edit-impact.sh, post-edit.sh, post-test.sh, stop-verify.sh
       lib/         context, output helpers
-  mcp/      MCP stdio server (12 read-only tools)
+  mcp/      MCP stdio server (14 read-only tools)
 ```
 
 ## Performance
 
-Benchmarked on Ariadne's own codebase (65 files, 6k LOC, 3 sub-projects). Apple M3.
+Benchmarked on Ariadne's own codebase (95 files, 3 sub-projects). Apple M3.
 
 | Operation | Time | Notes |
 |-----------|------|-------|
@@ -362,7 +366,7 @@ Hook latency stays under 200ms — fast enough to run on every edit without noti
 
 ```bash
 bun install
-bun test                  # 497 tests across 27 files
+bun test                  # 636 tests across 29 files
 bunx tsc --noEmit         # type-check all packages
 bun run packages/cli/src/index.ts doctor  # check prerequisites
 ```
