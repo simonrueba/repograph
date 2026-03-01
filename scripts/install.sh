@@ -37,31 +37,63 @@ ARTIFACT="ariadne-${PLATFORM}-${ARCH}"
 if [ -n "${ARIADNE_VERSION:-}" ]; then
   TAG="$ARIADNE_VERSION"
 else
-  TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-    | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+  # Use the releases/latest redirect to get the tag without parsing JSON.
+  # Falls back to API + grep if the redirect doesn't work.
+  TAG=$(curl -fsSI "https://github.com/${REPO}/releases/latest" 2>/dev/null \
+    | grep -i '^location:' | head -1 | sed 's|.*/tag/||; s/[[:space:]]//g')
   if [ -z "$TAG" ]; then
-    echo "error: could not determine latest release" >&2
+    TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null \
+      | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+  fi
+  if [ -z "$TAG" ]; then
+    echo "error: could not determine latest release." >&2
+    echo "  Check https://github.com/${REPO}/releases or set ARIADNE_VERSION manually." >&2
     exit 1
   fi
 fi
 
-URL="https://github.com/${REPO}/releases/download/${TAG}/${ARTIFACT}"
+BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
 
-# ── Download and install ─────────────────────────────────────────────
+# ── Download ─────────────────────────────────────────────────────────
 
 echo "Installing ariadne ${TAG} (${PLATFORM}-${ARCH})..."
 
+TMPDIR_INSTALL="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR_INSTALL"' EXIT
+
+curl -fsSL "${BASE_URL}/${ARTIFACT}" -o "${TMPDIR_INSTALL}/${ARTIFACT}"
+curl -fsSL "${BASE_URL}/SHA256SUMS"  -o "${TMPDIR_INSTALL}/SHA256SUMS"
+
+# ── Verify checksum ──────────────────────────────────────────────────
+
+EXPECTED=$(grep "${ARTIFACT}$" "${TMPDIR_INSTALL}/SHA256SUMS" | awk '{print $1}')
+if [ -z "$EXPECTED" ]; then
+  echo "warning: ${ARTIFACT} not found in SHA256SUMS, skipping verification" >&2
+else
+  if command -v sha256sum >/dev/null 2>&1; then
+    ACTUAL=$(sha256sum "${TMPDIR_INSTALL}/${ARTIFACT}" | awk '{print $1}')
+  elif command -v shasum >/dev/null 2>&1; then
+    ACTUAL=$(shasum -a 256 "${TMPDIR_INSTALL}/${ARTIFACT}" | awk '{print $1}')
+  else
+    echo "warning: no sha256sum or shasum found, skipping verification" >&2
+    ACTUAL="$EXPECTED"
+  fi
+  if [ "$ACTUAL" != "$EXPECTED" ]; then
+    echo "error: checksum mismatch for ${ARTIFACT}" >&2
+    echo "  expected: ${EXPECTED}" >&2
+    echo "  got:      ${ACTUAL}" >&2
+    exit 1
+  fi
+  echo "Checksum verified."
+fi
+
+# ── Install ──────────────────────────────────────────────────────────
+
 mkdir -p "$INSTALL_DIR"
-curl -fsSL "$URL" -o "${INSTALL_DIR}/ariadne"
+mv "${TMPDIR_INSTALL}/${ARTIFACT}" "${INSTALL_DIR}/ariadne"
 chmod +x "${INSTALL_DIR}/ariadne"
 
-# ── Verify ───────────────────────────────────────────────────────────
-
-if "${INSTALL_DIR}/ariadne" status >/dev/null 2>&1 || true; then
-  echo "Installed ariadne to ${INSTALL_DIR}/ariadne"
-else
-  echo "Installed ariadne to ${INSTALL_DIR}/ariadne"
-fi
+echo "Installed ariadne ${TAG} to ${INSTALL_DIR}/ariadne"
 
 # ── PATH hint ────────────────────────────────────────────────────────
 
