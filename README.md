@@ -16,15 +16,25 @@ No LLMs involved — just static analysis.
 - **Integrates** with Claude Code via hooks (auto-update on edit, gatekeeper on stop) and MCP tools
 - **Works on any existing project** — run `setup` and it indexes everything from disk
 
+## Install
+
+**Requires [Bun](https://bun.sh) >= 1.0**
+
+```bash
+# Clone and install
+git clone https://github.com/simonrueba/ariadne.git && cd ariadne && bun install
+
+# Set up on your project (one command — init + index + hooks + MCP config)
+bun run packages/cli/src/index.ts setup /path/to/your/project
+```
+
+SCIP indexers are optional — structural import analysis works without them. Install per language as needed (see [Toolchains by language](#toolchains-by-language) below). Run `ariadne doctor` to check what's available.
+
 ## Quick start
 
 ### Use on any project (recommended)
 
 ```bash
-# Clone ariadne
-git clone <repo-url> ariadne && cd ariadne
-bun install
-
 # Set up on your project — does everything in one step:
 # init → index → generate hooks + MCP config
 bun run packages/cli/src/index.ts setup /path/to/your/project
@@ -371,36 +381,22 @@ bunx tsc --noEmit         # type-check all packages
 bun run packages/cli/src/index.ts doctor  # check prerequisites
 ```
 
-## Requirements
+## Toolchains by language
 
-- [Bun](https://bun.sh) >= 1.0
+**Required:** [Bun](https://bun.sh) >= 1.0
 
-SCIP indexers are optional — structural imports still work without them. Install the ones for your languages:
+**Optional:** SCIP indexers add symbol-level analysis (defs/refs/call graph) on top of structural imports. Without them, you still get file-level dependency graphs, import edges, and artifact indexing.
 
-| Language | SCIP Indexer | Install |
-|----------|-------------|---------|
-| TypeScript / JavaScript | `@sourcegraph/scip-typescript` | `npx @sourcegraph/scip-typescript` (auto-downloaded) |
-| Python | `scip-python` | `uvx scip-python` or `pip install scip-python` |
-| Go | `scip-go` | `go install github.com/sourcegraph/scip-go@latest` |
-| Rust | `rust-analyzer` | `rustup component add rust-analyzer` |
-| Java / Kotlin / Scala | `scip-java` | `coursier install scip-java` |
-| C# | `scip-dotnet` | `dotnet tool install --global scip-dotnet` |
-| Ruby | `scip-ruby` | `gem install scip-ruby` |
-
-Run `ariadne doctor` to check which indexers are available.
-
-## Supported languages
-
-| Language | Extensions | Structural imports | SCIP symbols | Type checker | Env var detection |
-|----------|-----------|-------------------|-------------|-------------|------------------|
-| TypeScript / JavaScript | `.ts` `.tsx` `.js` `.jsx` | ES modules, CommonJS, dynamic imports | scip-typescript | `tsc --noEmit` | `process.env`, `import.meta.env` |
-| Python | `.py` | `import`, `from ... import`, relative imports | scip-python | — | `os.environ`, `os.getenv` |
-| Go | `.go` | `import "pkg"`, block imports | scip-go | `go vet` | `os.Getenv`, `os.LookupEnv` |
-| Rust | `.rs` | `use`, `mod`, `extern crate` | rust-analyzer | `cargo check` | `env::var`, `env!` |
-| Java / Kotlin | `.java` `.kt` | `import pkg.Class`, static imports | scip-java | `mvn compile` / `gradle` | `System.getenv` |
-| Scala | `.scala` | `import pkg._`, selective imports | scip-java | `sbt compile` | `sys.env` |
-| C# | `.cs` | `using Namespace`, static/aliased usings | scip-dotnet | `dotnet build` | `Environment.GetEnvironmentVariable` |
-| Ruby | `.rb` | `require`, `require_relative`, `load` | scip-ruby | — | `ENV[]`, `ENV.fetch` |
+| Language | Extensions | Structural imports | SCIP indexer | Type checker | Install SCIP |
+|----------|-----------|-------------------|-------------|-------------|-------------|
+| TypeScript / JS | `.ts` `.tsx` `.js` `.jsx` | ES modules, CJS, dynamic | scip-typescript | `tsc --noEmit` | `npx @sourcegraph/scip-typescript` (auto) |
+| Python | `.py` | `import`, `from`, relative | scip-python | — | `uvx scip-python` or `pip install scip-python` |
+| Go | `.go` | `import "pkg"`, blocks | scip-go | `go vet` | `go install github.com/sourcegraph/scip-go@latest` |
+| Rust | `.rs` | `use`, `mod`, `extern crate` | rust-analyzer | `cargo check` | `rustup component add rust-analyzer` |
+| Java / Kotlin | `.java` `.kt` | `import`, static imports | scip-java | `mvn compile` / `gradle` | `coursier install scip-java` |
+| Scala | `.scala` | `import pkg._`, selective | scip-java | `sbt compile` | `coursier install scip-java` |
+| C# | `.cs` | `using`, static/aliased | scip-dotnet | `dotnet build` | `dotnet tool install --global scip-dotnet` |
+| Ruby | `.rb` | `require`, `require_relative` | scip-ruby | — | `gem install scip-ruby` |
 
 ### Language roadmap
 
