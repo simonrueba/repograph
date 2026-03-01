@@ -203,21 +203,33 @@ function generateHooksConfig(): object {
 }
 
 function generateMcpConfig(): object {
-  // Resolve the MCP server source relative to this CLI package.
-  const localMcp = join(import.meta.dir, "..", "..", "..", "mcp", "src", "index.ts");
-
-  if (!existsSync(localMcp)) {
-    throw new Error(
-      `Cannot find MCP server at ${localMcp}. ` +
-      `Ensure you are running setup from an ariadne clone.`,
-    );
+  // Dev: resolve MCP server from monorepo.
+  // Path differs between source (src/commands/) and dist (dist/):
+  //   from src/commands/setup.ts: ../../.. → packages/, + mcp/src/index.ts
+  //   from dist/index.js:         ../..   → packages/, + mcp/src/index.ts
+  const candidates = [
+    join(import.meta.dir, "..", "..", "..", "mcp", "src", "index.ts"),
+    join(import.meta.dir, "..", "..", "mcp", "src", "index.ts"),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return {
+        mcpServers: {
+          ariadne: {
+            command: "bun",
+            args: ["run", resolve(candidate)],
+            env: { ARIADNE_ROOT: "." },
+          },
+        },
+      };
+    }
   }
-
+  // npm: use bunx to resolve the ariadne-mcp package
   return {
     mcpServers: {
       ariadne: {
-        command: "bun",
-        args: ["run", resolve(localMcp)],
+        command: "bunx",
+        args: ["ariadne-mcp"],
         env: { ARIADNE_ROOT: "." },
       },
     },

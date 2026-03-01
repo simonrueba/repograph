@@ -2,21 +2,23 @@
   "name": "ariadne-mcp",
   "version": "0.1.0",
   "type": "module",
-  "main": "src/index.ts",
+  "main": "dist/index.js",
   "bin": {
-    "ariadne-mcp": "src/index.ts"
+    "ariadne-mcp": "dist/index.js"
+  },
+  "files": ["dist"],
+  "engines": {
+    "bun": ">=1.0.0"
   },
   "scripts": {
     "start": "bun run src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "build": "bun build src/index.ts --outdir dist --target bun && cp ../core/src/scip/scip.proto dist/scip.proto",
     "test": "vitest run"
   },
-  "dependencies": {
+  "devDependencies": {
     "ariadne-core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.27.0",
-    "zod": "^3.23.0"
-  },
-  "devDependencies": {
+    "zod": "^3.23.0",
     "bun-types": "latest"
   }
 }

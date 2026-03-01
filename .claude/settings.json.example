@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash packages/cli/src/hooks/post-edit.sh"
+            "command": "bash .ariadne/hooks/post-edit.sh"
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash packages/cli/src/hooks/post-test.sh"
+            "command": "bash .ariadne/hooks/post-test.sh"
           }
         ]
       }
@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash packages/cli/src/hooks/stop-verify.sh"
+            "command": "bash .ariadne/hooks/stop-verify.sh"
           }
         ]
       }
