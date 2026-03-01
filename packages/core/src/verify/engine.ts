@@ -145,19 +145,52 @@ export class VerifyEngine {
       summary,
     };
 
+    // ── Build actionable recommendations for every failing check ────────
+    const recs: string[] = [];
+
+    if (!indexFreshness.passed) {
+      const staleFiles = indexFreshness.issues.map((i: any) => i.path).filter(Boolean);
+      if (staleFiles.length > 0) {
+        recs.push(`Run \`ariadne update\` to re-index ${staleFiles.length} stale file${staleFiles.length === 1 ? "" : "s"}`);
+        recs.push(`  Why: ${staleFiles.slice(0, 3).join(", ")}${staleFiles.length > 3 ? ` (+${staleFiles.length - 3} more)` : ""} changed since last index`);
+      }
+    }
+
+    if (!testCoverage.passed) {
+      recs.push("Run your test suite (e.g. `bun test`, `pytest`, `go test ./...`)");
+      recs.push("  Why: no test_run event recorded after the latest edit");
+    }
+
     if (!typecheck.passed && typecheck.issues.length > 0) {
-      report.recommendations = buildTypecheckRecommendations(
-        typecheck.issues as TypecheckIssue[],
-      );
+      recs.push(...buildTypecheckRecommendations(typecheck.issues as TypecheckIssue[]));
+    }
+
+    if (!boundaries.passed && boundaries.issues.length > 0) {
+      const violations = boundaries.issues as { sourceFile: string; sourceLayer: string; targetLayer: string }[];
+      for (const v of violations.slice(0, 3)) {
+        recs.push(`Run \`ariadne query impact ${v.sourceFile}\` — ${v.sourceLayer} must not import ${v.targetLayer}`);
+      }
+      if (violations.length > 3) {
+        recs.push(`  ...and ${violations.length - 3} more boundary violation${violations.length - 3 === 1 ? "" : "s"}`);
+      }
+      recs.push("  Why: imports cross layer boundaries defined in ariadne.boundaries.json");
+    }
+
+    if (!policies.passed && policies.issues.length > 0) {
+      recs.push("Run `ariadne metrics --diff` to see policy violations against baseline");
+      recs.push("  Why: structural metrics exceed thresholds in ariadne.policies.json");
     }
 
     // Non-blocking warning: files indexed but no symbols (SCIP likely failed)
     const symbolCount = this.store.getSymbolCount();
     if (allFiles.length > 0 && symbolCount === 0) {
-      if (!report.recommendations) report.recommendations = [];
-      report.recommendations.push(
+      recs.push(
         `Warning: ${allFiles.length} files indexed but 0 symbols — SCIP indexing likely failed or was skipped. Run 'ariadne doctor' to check prerequisites.`,
       );
+    }
+
+    if (recs.length > 0) {
+      report.recommendations = recs;
     }
 
     return report;
