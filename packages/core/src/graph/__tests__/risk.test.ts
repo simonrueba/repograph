@@ -150,4 +150,55 @@ describe("computeRiskScore", () => {
     const decimals = result.score.toString().split(".")[1];
     expect(!decimals || decimals.length <= 3).toBe(true);
   });
+
+  it("should always include breakdown in result", () => {
+    const result = computeRiskScore(makeInputs());
+    expect(result.breakdown).toBeDefined();
+    expect(result.breakdown.fileSpread).toBe(0);
+    expect(result.breakdown.publicApiBreak).toBe(0);
+    expect(result.breakdown.packageSpread).toBe(0);
+    expect(result.breakdown.testGap).toBe(0);
+    expect(result.breakdown.boundary).toBe(0);
+  });
+
+  it("should have all breakdown values in 0.0-1.0 range", () => {
+    const result = computeRiskScore(
+      makeInputs({
+        affectedFileCount: 200,
+        totalFileCount: 100,
+        publicApiBreakCount: 100,
+        affectedPackageCount: 20,
+        totalPackageCount: 5,
+        untestedAffectedFileCount: 200,
+        totalAffectedFileCount: 100,
+        boundaryProximity: 10,
+      }),
+    );
+    for (const value of Object.values(result.breakdown)) {
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("should have weighted breakdown sum match score", () => {
+    const result = computeRiskScore(
+      makeInputs({
+        affectedFileCount: 30,
+        publicApiBreakCount: 1,
+        affectedPackageCount: 2,
+        untestedAffectedFileCount: 10,
+        totalAffectedFileCount: 30,
+        boundaryProximity: 0.5,
+      }),
+    );
+    const { breakdown } = result;
+    const weightedSum =
+      0.25 * breakdown.fileSpread +
+      0.30 * breakdown.publicApiBreak +
+      0.15 * breakdown.packageSpread +
+      0.20 * breakdown.testGap +
+      0.10 * breakdown.boundary;
+    // Allow small floating-point rounding difference
+    expect(Math.abs(result.score - Math.round(weightedSum * 1000) / 1000)).toBeLessThanOrEqual(0.001);
+  });
 });

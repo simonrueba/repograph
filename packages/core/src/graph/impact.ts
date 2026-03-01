@@ -1,7 +1,7 @@
 import type { StoreQueries, OccurrenceRecord } from "../store/queries";
 import { basename } from "path";
 import { getSnippet, formatRange, createSnippetCache, isTestFile } from "./utils";
-import { computeRiskScore, type RiskCategory } from "./risk";
+import { computeRiskScore, type RiskCategory, type RiskBreakdown } from "./risk";
 
 export interface ImpactResult {
   changedSymbols: { id: string; name: string; filePath: string }[];
@@ -38,6 +38,7 @@ export interface TransitiveImpactResult {
   testCount: number;
   riskScore: number;
   riskCategory: RiskCategory;
+  riskBreakdown: RiskBreakdown;
   boundaryViolationRisk: "none" | "low" | "medium" | "high";
 }
 
@@ -437,6 +438,7 @@ export class ImpactAnalyzer {
       testCount: testFiles.length,
       riskScore: risk.score,
       riskCategory: risk.category,
+      riskBreakdown: risk.breakdown,
       boundaryViolationRisk,
     };
   }

@@ -37,7 +37,7 @@ export type { ContextFileEntry, ContextResult, ContextOptions } from "./graph/co
 export { PreflightAnalyzer } from "./graph/preflight";
 export type { PreflightResult, PreflightSymbol, PreflightCallSite, PreflightBlastRadius, PreflightBoundary, PreflightOptions } from "./graph/preflight";
 export { computeRiskScore } from "./graph/risk";
-export type { RiskInputs, RiskResult, RiskCategory } from "./graph/risk";
+export type { RiskInputs, RiskResult, RiskCategory, RiskBreakdown } from "./graph/risk";
 
 // ── Verify ───────────────────────────────────────────────────────────────
 export { VerifyEngine } from "./verify/engine";

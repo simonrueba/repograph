@@ -3,17 +3,33 @@ import { join, resolve } from "path";
 import { createDatabase } from "ariadne-core";
 import { output } from "../lib/output";
 import { runIndex } from "./index-cmd";
+import { getPolicyPreset } from "../lib/policy-presets";
+
+function extractFlag(args: string[], flag: string): string | undefined {
+  const idx = args.indexOf(flag);
+  if (idx !== -1 && idx + 1 < args.length) {
+    return args[idx + 1];
+  }
+  return undefined;
+}
 
 /**
  * One-command setup for any project: init + index + generate configs.
  *
  * Usage:
- *   ariadne setup [path]           # init + structural + SCIP index
- *   ariadne setup [path] --quick   # init + structural imports only (skip SCIP)
+ *   ariadne setup [path]                        # init + structural + SCIP index
+ *   ariadne setup [path] --quick                # init + structural imports only (skip SCIP)
+ *   ariadne setup [path] --preset <name>        # also write policy preset
  */
 export async function runSetup(args: string[]): Promise<void> {
   const quick = args.includes("--quick");
-  const rootArg = args.find((a) => !a.startsWith("--"));
+  // Collect indices consumed by flag values so we can skip them for positional args
+  const flagValues = new Set<number>();
+  for (const flag of ["--preset"]) {
+    const idx = args.indexOf(flag);
+    if (idx !== -1 && idx + 1 < args.length) flagValues.add(idx + 1);
+  }
+  const rootArg = args.find((a, i) => !a.startsWith("--") && !flagValues.has(i));
   const repoRoot = resolve(rootArg || process.cwd());
   const ariadneDir = join(repoRoot, ".ariadne");
 
@@ -97,6 +113,23 @@ export async function runSetup(args: string[]): Promise<void> {
       } catch {
         // Ignore errors during boundary config generation
       }
+    }
+  }
+
+  // Step 2c: Write policy preset if --preset flag provided
+  const presetName = extractFlag(args, "--preset");
+  if (presetName) {
+    const policiesPath = join(repoRoot, "ariadne.policies.json");
+    if (!existsSync(policiesPath)) {
+      const preset = getPolicyPreset(presetName);
+      if (preset) {
+        writeFileSync(policiesPath, JSON.stringify(preset, null, 2) + "\n");
+        steps.push({ step: "policy_preset", status: `created (${presetName})` });
+      } else {
+        steps.push({ step: "policy_preset", status: `unknown preset: ${presetName}` });
+      }
+    } else {
+      steps.push({ step: "policy_preset", status: "exists" });
     }
   }
 

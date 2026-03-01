@@ -11,9 +11,18 @@ export interface RiskInputs {
 
 export type RiskCategory = "low" | "medium" | "high" | "critical";
 
+export interface RiskBreakdown {
+  fileSpread: number;      // 0.0–1.0
+  publicApiBreak: number;  // 0.0–1.0
+  packageSpread: number;   // 0.0–1.0
+  testGap: number;         // 0.0–1.0
+  boundary: number;        // 0.0–1.0
+}
+
 export interface RiskResult {
   score: number;
   category: RiskCategory;
+  breakdown: RiskBreakdown;
 }
 
 /**
@@ -67,5 +76,17 @@ export function computeRiskScore(inputs: RiskInputs): RiskResult {
   else if (clamped < 0.8) category = "high";
   else category = "critical";
 
-  return { score: Math.round(clamped * 1000) / 1000, category };
+  const clamp01 = (n: number) => Math.round(Math.max(0, Math.min(1, n)) * 1000) / 1000;
+
+  return {
+    score: clamp01(clamped),
+    category,
+    breakdown: {
+      fileSpread: clamp01(fileSpread),
+      publicApiBreak: clamp01(publicApiBreak),
+      packageSpread: clamp01(packageSpread),
+      testGap: clamp01(testGap),
+      boundary: clamp01(boundary),
+    },
+  };
 }
