@@ -4,6 +4,7 @@ import { checkIndexFreshness } from "./checks/index-freshness";
 import { checkMissingTests } from "./checks/missing-tests";
 import { checkTypecheck, checkTypecheckAsync, type TypecheckIssue } from "./checks/typecheck";
 import { checkBoundaries } from "./checks/boundaries";
+import { checkPolicies } from "./checks/policies";
 
 export interface VerifyReport {
   status: "OK" | "FAIL";
@@ -13,6 +14,7 @@ export interface VerifyReport {
     testCoverage: { passed: boolean; issues: unknown[] };
     typecheck: { passed: boolean; issues: unknown[] };
     boundaries?: { passed: boolean; issues: unknown[] };
+    policies?: { passed: boolean; issues: unknown[] };
   };
   summary: string;
   /**
@@ -108,21 +110,23 @@ export class VerifyEngine {
 
     // Run fast synchronous checks in parallel with the slow async typecheck.
     // Total time ≈ max(typecheck, other_checks) instead of sum.
-    const [indexFreshness, testCoverage, boundaries, typecheck] = await Promise.all([
+    const [indexFreshness, testCoverage, boundaries, policies, typecheck] = await Promise.all([
       Promise.resolve(checkIndexFreshness(this.store, this.repoRoot)),
       Promise.resolve(checkMissingTests(this.ledger)),
       Promise.resolve(checkBoundaries(this.store, this.repoRoot)),
+      Promise.resolve(checkPolicies(this.store, this.repoRoot)),
       checkTypecheckAsync(this.repoRoot),
     ]);
 
     const allPassed =
-      indexFreshness.passed && testCoverage.passed && typecheck.passed && boundaries.passed;
+      indexFreshness.passed && testCoverage.passed && typecheck.passed && boundaries.passed && policies.passed;
 
     const failedNames: string[] = [];
     if (!indexFreshness.passed) failedNames.push("indexFreshness");
     if (!testCoverage.passed) failedNames.push("testCoverage");
     if (!typecheck.passed) failedNames.push("typecheck");
     if (!boundaries.passed) failedNames.push("boundaries");
+    if (!policies.passed) failedNames.push("policies");
 
     const summary = allPassed
       ? "all checks passed"
@@ -136,6 +140,7 @@ export class VerifyEngine {
         testCoverage,
         typecheck,
         boundaries,
+        policies,
       },
       summary,
     };

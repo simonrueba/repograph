@@ -19,6 +19,7 @@ import {
   GraphQueries,
   ImpactAnalyzer,
   ModuleGraph,
+  StructuralMetrics,
   type ModuleGraphResult,
 } from "ariadne-core";
 
@@ -40,6 +41,7 @@ const store = new StoreQueries(db);
 const graph = new GraphQueries(store, repoRoot);
 const impact = new ImpactAnalyzer(store, repoRoot);
 const modules = new ModuleGraph(store);
+const metrics = new StructuralMetrics(store, repoRoot);
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -296,6 +298,87 @@ server.registerTool(
   async ({ symbolId, depth }) => {
     try {
       return ok(graph.getCallGraph(symbolId, depth ?? 1));
+    } catch (e: unknown) {
+      return err(toErrorMessage(e));
+    }
+  },
+);
+
+// Tool 10: transitive_impact
+server.registerTool(
+  "ariadne.transitive_impact",
+  {
+    title: "Transitive Impact Analysis",
+    description: "Compute full transitive impact (blast radius) of changed files with risk scoring. Traverses symbol references across multiple depths to find all affected files, packages, public API breaks, and relevant tests.",
+    inputSchema: {
+      paths: z
+        .array(z.string())
+        .describe("Array of changed file paths relative to repo root"),
+      maxDepth: z
+        .number()
+        .optional()
+        .describe("Maximum BFS depth for transitive traversal (default 5)"),
+      includeCallGraph: z
+        .boolean()
+        .optional()
+        .describe("When true, also traverse call graph edges (callers of changed symbols)"),
+    },
+    annotations: READ_ONLY,
+  },
+  async ({ paths, maxDepth, includeCallGraph }) => {
+    try {
+      return ok(
+        impact.computeTransitiveImpact(paths, {
+          maxDepth: maxDepth ?? undefined,
+          includeCallGraph: includeCallGraph ?? false,
+        }),
+      );
+    } catch (e: unknown) {
+      return err(toErrorMessage(e));
+    }
+  },
+);
+
+// Tool 11: metrics
+server.registerTool(
+  "ariadne.metrics",
+  {
+    title: "Structural Metrics",
+    description: "Compute current structural metrics: module coupling (Ca/Ce/instability), dependency cycles, and public API surface per package.",
+    inputSchema: {
+      scopePath: z
+        .string()
+        .optional()
+        .describe("Optional path prefix to scope coupling and cycle detection"),
+    },
+    annotations: READ_ONLY,
+  },
+  async ({ scopePath }) => {
+    try {
+      return ok(metrics.computeMetrics(scopePath ?? undefined));
+    } catch (e: unknown) {
+      return err(toErrorMessage(e));
+    }
+  },
+);
+
+// Tool 12: cycles
+server.registerTool(
+  "ariadne.cycles",
+  {
+    title: "Cycle Detection",
+    description: "Detect dependency cycles in the module graph using Tarjan's SCC algorithm. Returns all cycles with their members and sizes.",
+    inputSchema: {
+      scopePath: z
+        .string()
+        .optional()
+        .describe("Optional path prefix to scope cycle detection"),
+    },
+    annotations: READ_ONLY,
+  },
+  async ({ scopePath }) => {
+    try {
+      return ok(metrics.detectCycles(scopePath ?? undefined));
     } catch (e: unknown) {
       return err(toErrorMessage(e));
     }
