@@ -22,6 +22,28 @@ export function createSnippetCache(): SnippetCache {
   return new Map();
 }
 
+// ── Test file detection ─────────────────────────────────────────────
+
+export const TEST_PATTERNS = [
+  /\.test\.[tj]sx?$/,
+  /\.spec\.[tj]sx?$/,
+  /test_.*\.py$/,
+  /.*_test\.py$/,
+  /.*_test\.go$/,
+  /.*_test\.rs$/,
+  /Test\.java$/,
+  /Test\.kt$/,
+  /Tests?\.cs$/,
+  /_test\.rb$/,
+  /_spec\.rb$/,
+  /Spec\.scala$/,
+  /Test\.scala$/,
+];
+
+export function isTestFile(path: string): boolean {
+  return TEST_PATTERNS.some((p) => p.test(path));
+}
+
 /** Read up to 3 lines of code starting at startLine for a snippet. */
 export function getSnippet(
   repoRoot: string,

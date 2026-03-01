@@ -20,6 +20,8 @@ import {
   ImpactAnalyzer,
   ModuleGraph,
   StructuralMetrics,
+  ContextCompiler,
+  PreflightAnalyzer,
   type ModuleGraphResult,
 } from "ariadne-core";
 
@@ -42,6 +44,8 @@ const graph = new GraphQueries(store, repoRoot);
 const impact = new ImpactAnalyzer(store, repoRoot);
 const modules = new ModuleGraph(store);
 const metrics = new StructuralMetrics(store, repoRoot);
+const contextCompiler = new ContextCompiler(store, repoRoot);
+const preflight = new PreflightAnalyzer(store, repoRoot);
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -379,6 +383,70 @@ server.registerTool(
   async ({ scopePath }) => {
     try {
       return ok(metrics.detectCycles(scopePath ?? undefined));
+    } catch (e: unknown) {
+      return err(toErrorMessage(e));
+    }
+  },
+);
+
+// Tool 13: plan_context
+server.registerTool(
+  "ariadne.plan_context",
+  {
+    title: "Context Compilation",
+    description: "Compile dependency-aware context for entry files. BFS walks imports in both directions, scores files by relevance, and fills a token budget. Returns prioritized file contents for agent consumption.",
+    inputSchema: {
+      entries: z
+        .array(z.string())
+        .describe("Entry file paths relative to repo root"),
+      depth: z
+        .number()
+        .optional()
+        .describe("BFS depth limit (default 3)"),
+      budget: z
+        .number()
+        .optional()
+        .describe("Token budget (default 50000)"),
+      includeTests: z
+        .boolean()
+        .optional()
+        .describe("Include test files at normal priority (default false)"),
+    },
+    annotations: READ_ONLY,
+  },
+  async ({ entries, depth, budget, includeTests }) => {
+    try {
+      return ok(
+        contextCompiler.compile(entries, {
+          depth: depth ?? undefined,
+          budget: budget ?? undefined,
+          includeTests: includeTests ?? false,
+        }),
+      );
+    } catch (e: unknown) {
+      return err(toErrorMessage(e));
+    }
+  },
+);
+
+// Tool 14: preflight
+server.registerTool(
+  "ariadne.preflight",
+  {
+    title: "Pre-Flight Analysis",
+    description: "Semantic pre-flight analysis for a file about to be edited. Returns all symbols with call sites, signatures, blast radius, boundary info, and a prescriptive checklist of actions needed.",
+    inputSchema: {
+      path: z.string().describe("File path relative to repo root"),
+      fast: z
+        .boolean()
+        .optional()
+        .describe("Fast mode: skip transitive analysis, cap call sites to 5 (default false)"),
+    },
+    annotations: READ_ONLY,
+  },
+  async ({ path, fast }) => {
+    try {
+      return ok(preflight.analyze(path, { fast: fast ?? false }));
     } catch (e: unknown) {
       return err(toErrorMessage(e));
     }

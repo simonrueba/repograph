@@ -369,4 +369,242 @@ describe("VerifyEngine", () => {
       expect(report.checks).toHaveProperty("typecheck");
     });
   });
+
+  // ── buildTypecheckRecommendations (tested via verify output) ──────
+
+  describe("buildTypecheckRecommendations (via verify)", () => {
+    it(
+      "should populate recommendations when typecheck fails",
+      { timeout: 30_000 },
+      async () => {
+        queries.upsertFile({ path: "src/bad.ts", language: "typescript", hash: "abc" });
+        writeSourceFile(
+          "tsconfig.json",
+          JSON.stringify({
+            compilerOptions: { strict: true, noEmit: true, skipLibCheck: true },
+            include: ["src"],
+          }),
+        );
+        writeSourceFile("src/bad.ts", "export const x: number = 'not a number';");
+
+        const engine = new VerifyEngine(queries, ledger, repoRoot);
+        const report = await engine.verify();
+
+        expect(report.status).toBe("FAIL");
+        expect(report.recommendations).toBeDefined();
+        expect(report.recommendations!.length).toBeGreaterThan(0);
+      },
+    );
+
+    it(
+      "should contain impact commands for top error files",
+      { timeout: 30_000 },
+      async () => {
+        queries.upsertFile({ path: "src/a.ts", language: "typescript", hash: "a" });
+        queries.upsertFile({ path: "src/b.ts", language: "typescript", hash: "b" });
+        writeSourceFile(
+          "tsconfig.json",
+          JSON.stringify({
+            compilerOptions: { strict: true, noEmit: true, skipLibCheck: true },
+            include: ["src"],
+          }),
+        );
+        writeSourceFile("src/a.ts", "export const x: number = 'bad';\nexport const y: number = 'bad';");
+        writeSourceFile("src/b.ts", "export const z: number = 'bad';");
+
+        const engine = new VerifyEngine(queries, ledger, repoRoot);
+        const report = await engine.verify();
+
+        expect(report.recommendations).toBeDefined();
+        const impactCmds = report.recommendations!.filter((r) =>
+          r.startsWith("ariadne query impact"),
+        );
+        expect(impactCmds.length).toBeGreaterThan(0);
+      },
+    );
+
+    it(
+      "should have no recommendations when typecheck passes",
+      { timeout: 30_000 },
+      async () => {
+        queries.upsertFile({ path: "src/ok.ts", language: "typescript", hash: "abc" });
+        queries.upsertSymbol({ id: "sym:ok", name: "ok", kind: "variable" });
+        writeSourceFile(
+          "tsconfig.json",
+          JSON.stringify({
+            compilerOptions: { strict: true, noEmit: true, skipLibCheck: true },
+            include: ["src"],
+          }),
+        );
+        writeSourceFile("src/ok.ts", "export const x: number = 1;");
+
+        const engine = new VerifyEngine(queries, ledger, repoRoot);
+        const report = await engine.verify();
+
+        expect(report.status).toBe("OK");
+        expect(report.recommendations).toBeUndefined();
+      },
+    );
+
+    it(
+      "should cap recommendations at 15 entries",
+      { timeout: 30_000 },
+      async () => {
+        // Create many TS files with errors to generate lots of suggestions
+        const tsConfig = {
+          compilerOptions: { strict: true, noEmit: true, skipLibCheck: true },
+          include: ["src"],
+        };
+        writeSourceFile("tsconfig.json", JSON.stringify(tsConfig));
+        for (let i = 0; i < 20; i++) {
+          const fileName = `src/err${i}.ts`;
+          queries.upsertFile({ path: fileName, language: "typescript", hash: `h${i}` });
+          writeSourceFile(fileName, `export const x${i}: number = 'bad${i}';`);
+        }
+
+        const engine = new VerifyEngine(queries, ledger, repoRoot);
+        const report = await engine.verify();
+
+        if (report.recommendations) {
+          // buildTypecheckRecommendations caps at 15, then adds a guidance note.
+          // The zero-symbol warning is appended separately by verify().
+          // Filter both to check just the capped suggestions.
+          const capped = report.recommendations.filter(
+            (r) => !r.startsWith("Run `ariadne") && !r.startsWith("Warning:"),
+          );
+          expect(capped.length).toBeLessThanOrEqual(15);
+        }
+      },
+    );
+
+    it(
+      "should de-duplicate suggested queries",
+      { timeout: 30_000 },
+      async () => {
+        queries.upsertFile({ path: "src/dup.ts", language: "typescript", hash: "abc" });
+        writeSourceFile(
+          "tsconfig.json",
+          JSON.stringify({
+            compilerOptions: { strict: true, noEmit: true, skipLibCheck: true },
+            include: ["src"],
+          }),
+        );
+        // Multiple errors in the same file should not produce duplicate impact commands
+        writeSourceFile("src/dup.ts", "export const a: number = 'bad';\nexport const b: number = 'bad';");
+
+        const engine = new VerifyEngine(queries, ledger, repoRoot);
+        const report = await engine.verify();
+
+        if (report.recommendations) {
+          const unique = new Set(report.recommendations);
+          expect(unique.size).toBe(report.recommendations.length);
+        }
+      },
+    );
+  });
+
+  // ── Zero-symbol warning ───────────────────────────────────────────
+
+  describe("zero-symbol warning", () => {
+    it("should warn when files indexed but 0 symbols", async () => {
+      queries.upsertFile({ path: "src/app.ts", language: "typescript", hash: "abc" });
+      // No symbols inserted
+
+      const engine = new VerifyEngine(queries, ledger, repoRoot);
+      const report = await engine.verify();
+
+      expect(report.recommendations).toBeDefined();
+      expect(
+        report.recommendations!.some((r) => r.includes("0 symbols")),
+      ).toBe(true);
+    });
+
+    it("should not warn when both files and symbols exist", async () => {
+      queries.upsertFile({ path: "src/app.ts", language: "typescript", hash: "abc" });
+      queries.upsertSymbol({ id: "sym:app", name: "app", kind: "module", file_path: "src/app.ts" });
+
+      const engine = new VerifyEngine(queries, ledger, repoRoot);
+      const report = await engine.verify();
+
+      if (report.recommendations) {
+        expect(
+          report.recommendations.some((r) => r.includes("0 symbols")),
+        ).toBe(false);
+      }
+    });
+  });
+
+  // ── Boundaries/policies in full verify ────────────────────────────
+
+  describe("boundaries and policies in full verify", () => {
+    it("should include boundaries check result", async () => {
+      queries.upsertFile({ path: "src/app.ts", language: "typescript", hash: "abc" });
+      queries.upsertSymbol({ id: "sym:app", name: "app", kind: "module", file_path: "src/app.ts" });
+
+      // Write a boundaries config with layers
+      writeSourceFile(
+        "ariadne.boundaries.json",
+        JSON.stringify({
+          layers: {
+            ui: { path: "src/ui", canImport: ["core"] },
+            core: { path: "src/core", canImport: [] },
+          },
+        }),
+      );
+
+      const engine = new VerifyEngine(queries, ledger, repoRoot);
+      const report = await engine.verify();
+
+      expect(report.checks.boundaries).toBeDefined();
+      expect(report.checks.boundaries!.passed).toBeTypeOf("boolean");
+    });
+
+    it("should include policies check result", async () => {
+      queries.upsertFile({ path: "src/app.ts", language: "typescript", hash: "abc" });
+      queries.upsertSymbol({ id: "sym:app", name: "app", kind: "module", file_path: "src/app.ts" });
+
+      // Write a policies config (no baseline, so it passes)
+      writeSourceFile(
+        "ariadne.policies.json",
+        JSON.stringify({
+          policies: { deny_new_cycles: true },
+        }),
+      );
+
+      const engine = new VerifyEngine(queries, ledger, repoRoot);
+      const report = await engine.verify();
+
+      expect(report.checks.policies).toBeDefined();
+      expect(report.checks.policies!.passed).toBeTypeOf("boolean");
+    });
+
+    it("should report FAIL when boundary violation exists", async () => {
+      queries.upsertFile({ path: "src/ui/button.ts", language: "typescript", hash: "a" });
+      queries.upsertFile({ path: "src/data/repo.ts", language: "typescript", hash: "b" });
+      queries.upsertSymbol({ id: "sym:btn", name: "Button", kind: "class", file_path: "src/ui/button.ts" });
+
+      // ui layer can only import core, but imports data — violation
+      writeSourceFile(
+        "ariadne.boundaries.json",
+        JSON.stringify({
+          layers: {
+            ui: { path: "src/ui", canImport: ["core"] },
+            core: { path: "src/core", canImport: [] },
+            data: { path: "src/data", canImport: ["core"] },
+          },
+        }),
+      );
+      // Add an import edge from ui to data (violates boundary)
+      queries.insertEdge({ source: "src/ui/button.ts", target: "src/data/repo.ts", kind: "imports" });
+
+      const engine = new VerifyEngine(queries, ledger, repoRoot);
+      const report = await engine.verify();
+
+      expect(report.checks.boundaries).toBeDefined();
+      expect(report.checks.boundaries!.passed).toBe(false);
+      expect(report.checks.boundaries!.issues.length).toBeGreaterThan(0);
+      expect(report.status).toBe("FAIL");
+      expect(report.summary).toContain("boundaries");
+    });
+  });
 });

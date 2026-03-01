@@ -1,6 +1,6 @@
 import type { StoreQueries, OccurrenceRecord } from "../store/queries";
 import { basename } from "path";
-import { getSnippet, formatRange, createSnippetCache } from "./utils";
+import { getSnippet, formatRange, createSnippetCache, isTestFile } from "./utils";
 import { computeRiskScore, type RiskCategory } from "./risk";
 
 export interface ImpactResult {
@@ -39,26 +39,6 @@ export interface TransitiveImpactResult {
   riskScore: number;
   riskCategory: RiskCategory;
   boundaryViolationRisk: "none" | "low" | "medium" | "high";
-}
-
-const TEST_PATTERNS = [
-  /\.test\.[tj]sx?$/,
-  /\.spec\.[tj]sx?$/,
-  /test_.*\.py$/,
-  /.*_test\.py$/,
-  /.*_test\.go$/,
-  /.*_test\.rs$/,
-  /Test\.java$/,
-  /Test\.kt$/,
-  /Tests?\.cs$/,
-  /_test\.rb$/,
-  /_spec\.rb$/,
-  /Spec\.scala$/,
-  /Test\.scala$/,
-];
-
-function isTestFile(path: string): boolean {
-  return TEST_PATTERNS.some((p) => p.test(path));
 }
 
 function testCommand(path: string): string {

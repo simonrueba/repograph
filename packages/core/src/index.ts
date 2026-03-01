@@ -12,6 +12,7 @@ export type {
   EdgeRecord,
   ProjectRecord,
 } from "./store/queries";
+export { FileQueries, SymbolQueries, OccurrenceQueries, EdgeQueries, MetaQueries, DirtyQueries, ProjectQueries } from "./store/queries/index";
 
 // ── Ledger ───────────────────────────────────────────────────────────────
 export { Ledger } from "./ledger/ledger";
@@ -31,6 +32,10 @@ export { ModuleGraph } from "./graph/modules";
 export type { ModuleGraphResult, GraphMode } from "./graph/modules";
 export { StructuralMetrics } from "./graph/metrics";
 export type { CouplingMetric, CycleInfo, CycleResult, PackageApiSurface, MetricsSnapshot, MetricsDiff } from "./graph/metrics";
+export { ContextCompiler } from "./graph/context";
+export type { ContextFileEntry, ContextResult, ContextOptions } from "./graph/context";
+export { PreflightAnalyzer } from "./graph/preflight";
+export type { PreflightResult, PreflightSymbol, PreflightCallSite, PreflightBlastRadius, PreflightBoundary, PreflightOptions } from "./graph/preflight";
 export { computeRiskScore } from "./graph/risk";
 export type { RiskInputs, RiskResult, RiskCategory } from "./graph/risk";
 
