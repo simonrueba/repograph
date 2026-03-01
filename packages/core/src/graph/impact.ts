@@ -1,6 +1,7 @@
 import type { StoreQueries, OccurrenceRecord } from "../store/queries";
 import { basename } from "path";
 import { getSnippet, formatRange, createSnippetCache } from "./utils";
+import { computeRiskScore, type RiskCategory } from "./risk";
 
 export interface ImpactResult {
   changedSymbols: { id: string; name: string; filePath: string }[];
@@ -26,6 +27,18 @@ export interface KeyRef {
 export interface DetailedImpactResult extends ImpactResult {
   symbolDetails: SymbolDetail[];
   keyRefs: KeyRef[];
+}
+
+export interface TransitiveImpactResult {
+  changedSymbols: { id: string; name: string; filePath: string; isPublicApi: boolean }[];
+  affectedFiles: { path: string; depth: number; reason: string }[];
+  affectedPackages: string[];
+  publicApiBreaks: { symbolId: string; symbolName: string; downstream: string[] }[];
+  testFiles: { path: string; relevance: "direct" | "transitive" }[];
+  testCount: number;
+  riskScore: number;
+  riskCategory: RiskCategory;
+  boundaryViolationRisk: "none" | "low" | "medium" | "high";
 }
 
 const TEST_PATTERNS = [
@@ -213,5 +226,238 @@ export class ImpactAnalyzer {
     }
 
     return { ...base, symbolDetails, keyRefs };
+  }
+
+  /**
+   * Compute transitive impact using BFS across the symbol graph.
+   *
+   * Algorithm:
+   * 1. Extract changed symbols from changed files
+   * 2. BFS loop (depth 1..maxDepth): for each frontier file, find all symbols,
+   *    query occurrences to discover new affected files, query structural importers.
+   *    Optionally traverse call graph edges (callers of changed symbols).
+   * 3. Detect public API symbols via export edges
+   * 4. Map files to packages via projects table (longest prefix match)
+   * 5. Identify public API breaks: changed public symbols with downstream package refs
+   * 6. Correlate test files: "direct" (depth ≤ 1) or "transitive"
+   * 7. Compute risk score
+   */
+  computeTransitiveImpact(
+    changedPaths: string[],
+    opts?: { maxDepth?: number; includeCallGraph?: boolean },
+  ): TransitiveImpactResult {
+    const maxDepth = opts?.maxDepth ?? 5;
+    const includeCallGraph = opts?.includeCallGraph ?? false;
+
+    // 1. Extract changed symbols from changed files
+    const changedSymbols: TransitiveImpactResult["changedSymbols"] = [];
+    const changedSymbolIds = new Set<string>();
+
+    for (const path of changedPaths) {
+      const occs = this.store.getOccurrencesByFile(path);
+      const defIds = occs.filter((o) => o.roles & 1).map((o) => o.symbol_id);
+      if (defIds.length === 0) continue;
+      const symbolMap = this.store.getSymbolsBatch(defIds);
+      for (const occ of occs) {
+        if (!(occ.roles & 1)) continue;
+        const sym = symbolMap.get(occ.symbol_id);
+        if (sym && !changedSymbolIds.has(sym.id)) {
+          changedSymbolIds.add(sym.id);
+          changedSymbols.push({
+            id: sym.id,
+            name: sym.name,
+            filePath: path,
+            isPublicApi: false, // filled in later
+          });
+        }
+      }
+    }
+
+    // 2. BFS transitive closure
+    const visitedFiles = new Set<string>(changedPaths);
+    const affectedFiles: TransitiveImpactResult["affectedFiles"] = [];
+    let frontier = new Set<string>(changedPaths);
+
+    for (let depth = 1; depth <= maxDepth && frontier.size > 0; depth++) {
+      const nextFrontier = new Set<string>();
+
+      for (const file of frontier) {
+        // Find symbols defined in this file
+        const occs = this.store.getOccurrencesByFile(file);
+        const defSymbolIds = occs
+          .filter((o) => o.roles & 1)
+          .map((o) => o.symbol_id);
+
+        // Find files that reference those symbols
+        for (const symId of defSymbolIds) {
+          const refs = this.store.getOccurrencesBySymbol(symId);
+          for (const ref of refs) {
+            if (!visitedFiles.has(ref.file_path)) {
+              visitedFiles.add(ref.file_path);
+              nextFrontier.add(ref.file_path);
+              affectedFiles.push({
+                path: ref.file_path,
+                depth,
+                reason: `references symbol from ${basename(file)}`,
+              });
+            }
+          }
+        }
+
+        // Find files that structurally import this file
+        const moduleName = file.replace(/\.[^.]+$/, "");
+        const importerEdges = this.store.getEdgesByTargetBatch([moduleName, file]);
+        for (const edge of importerEdges) {
+          if (!visitedFiles.has(edge.source)) {
+            visitedFiles.add(edge.source);
+            nextFrontier.add(edge.source);
+            affectedFiles.push({
+              path: edge.source,
+              depth,
+              reason: `imports ${basename(file)}`,
+            });
+          }
+        }
+
+        // Optionally traverse call graph (callers of symbols in this file)
+        if (includeCallGraph) {
+          for (const symId of defSymbolIds) {
+            const callers = this.store.getCallers(symId);
+            for (const caller of callers) {
+              // caller.source is a symbol ID — resolve to file
+              const callerSym = this.store.getSymbol(caller.source);
+              if (callerSym?.file_path && !visitedFiles.has(callerSym.file_path)) {
+                visitedFiles.add(callerSym.file_path);
+                nextFrontier.add(callerSym.file_path);
+                affectedFiles.push({
+                  path: callerSym.file_path,
+                  depth,
+                  reason: `calls symbol in ${basename(file)}`,
+                });
+              }
+            }
+          }
+        }
+      }
+
+      frontier = nextFrontier;
+    }
+
+    // 3. Detect public API symbols via export edges
+    const exportEdges = this.store.getExportEdges();
+    const exportedFiles = new Set<string>();
+    for (const edge of exportEdges) {
+      exportedFiles.add(edge.source);
+    }
+    for (const cs of changedSymbols) {
+      if (exportedFiles.has(cs.filePath)) {
+        cs.isPublicApi = true;
+      }
+    }
+
+    // 4. Map files to packages via projects table (longest prefix match)
+    const projects = this.store.getAllProjects();
+    const sortedProjects = [...projects].sort(
+      (a, b) => b.root.length - a.root.length,
+    );
+
+    function getPackage(filePath: string): string | null {
+      for (const p of sortedProjects) {
+        if (filePath.startsWith(p.root + "/") || filePath === p.root) {
+          return p.project_id;
+        }
+      }
+      return null;
+    }
+
+    const affectedPackageSet = new Set<string>();
+    for (const file of visitedFiles) {
+      const pkg = getPackage(file);
+      if (pkg) affectedPackageSet.add(pkg);
+    }
+
+    // 5. Identify public API breaks
+    const publicApiBreaks: TransitiveImpactResult["publicApiBreaks"] = [];
+    const publicSymbols = changedSymbols.filter((s) => s.isPublicApi);
+    const changedPackages = new Set(
+      changedPaths.map((p) => getPackage(p)).filter(Boolean) as string[],
+    );
+
+    for (const ps of publicSymbols) {
+      const refs = this.store.getOccurrencesBySymbol(ps.id);
+      const downstreamPkgs = new Set<string>();
+      for (const ref of refs) {
+        if (ref.roles & 1) continue; // skip definitions
+        const pkg = getPackage(ref.file_path);
+        if (pkg && !changedPackages.has(pkg)) {
+          downstreamPkgs.add(pkg);
+        }
+      }
+      if (downstreamPkgs.size > 0) {
+        publicApiBreaks.push({
+          symbolId: ps.id,
+          symbolName: ps.name,
+          downstream: [...downstreamPkgs],
+        });
+      }
+    }
+
+    // 6. Correlate test files
+    const testFiles: TransitiveImpactResult["testFiles"] = [];
+    for (const af of affectedFiles) {
+      if (isTestFile(af.path)) {
+        testFiles.push({
+          path: af.path,
+          relevance: af.depth <= 1 ? "direct" : "transitive",
+        });
+      }
+    }
+    // Also check changed files themselves
+    for (const cp of changedPaths) {
+      if (isTestFile(cp)) {
+        testFiles.push({ path: cp, relevance: "direct" });
+      }
+    }
+
+    // 7. Compute risk score
+    const totalFiles = this.store.getFileCount();
+    const testedPaths = new Set(testFiles.map((t) => t.path));
+    const untestedCount = affectedFiles.filter(
+      (f) => !testedPaths.has(f.path) && !isTestFile(f.path),
+    ).length;
+
+    const boundaryProximity = publicSymbols.length > 0
+      ? Math.min(publicApiBreaks.length / Math.max(publicSymbols.length, 1), 1)
+      : 0;
+
+    const risk = computeRiskScore({
+      affectedFileCount: affectedFiles.length,
+      totalFileCount: totalFiles,
+      publicApiBreakCount: publicApiBreaks.length,
+      affectedPackageCount: affectedPackageSet.size,
+      totalPackageCount: Math.max(projects.length, 1),
+      untestedAffectedFileCount: untestedCount,
+      totalAffectedFileCount: affectedFiles.length,
+      boundaryProximity,
+    });
+
+    let boundaryViolationRisk: TransitiveImpactResult["boundaryViolationRisk"] = "none";
+    if (publicApiBreaks.length > 0) {
+      if (publicApiBreaks.length >= 5) boundaryViolationRisk = "high";
+      else if (publicApiBreaks.length >= 2) boundaryViolationRisk = "medium";
+      else boundaryViolationRisk = "low";
+    }
+
+    return {
+      changedSymbols,
+      affectedFiles,
+      affectedPackages: [...affectedPackageSet],
+      publicApiBreaks,
+      testFiles,
+      testCount: testFiles.length,
+      riskScore: risk.score,
+      riskCategory: risk.category,
+      boundaryViolationRisk,
+    };
   }
 }

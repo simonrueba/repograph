@@ -7,8 +7,11 @@ No LLMs involved — just static analysis.
 ## What it does
 
 - **Indexes** your codebase (TypeScript, Python, Go, Rust, Java/Kotlin, Scala, C#, Ruby) into a SQLite graph of symbols, references, imports, and definitions
-- **Queries** let you search symbols, jump to definitions, find all references, trace impact of changes, and explore call graphs
-- **Verifies** repo consistency: stale index detection, empty index detection, missing test runs, type errors, and architecture boundary violations
+- **Queries** let you search symbols, jump to definitions, find all references, trace impact of changes, explore call graphs, and compute structural metrics
+- **Analyzes** transitive impact with risk scoring — BFS across the symbol graph to find all affected files, packages, public API breaks, and relevant tests
+- **Detects** structural drift — dependency cycles (Tarjan's SCC), module coupling (Ca/Ce/instability), and public API surface tracking with snapshot-based diffing
+- **Enforces** architectural policies via `ariadne.policies.json` — deny new cycles, cap API growth, limit coupling increases
+- **Verifies** repo consistency: stale index detection, empty index detection, missing test runs, type errors, architecture boundary violations, and policy compliance
 - **Indexes non-code artifacts** — `.env` vars, `package.json` scripts, SQL migrations, OpenAPI schemas — and links them to source references
 - **Integrates** with Claude Code via hooks (auto-update on edit, gatekeeper on stop) and MCP tools
 - **Works on any existing project** — run `setup` and it indexes everything from disk
@@ -30,7 +33,7 @@ bun run packages/cli/src/index.ts setup /path/to/your/project
 This creates:
 - `.ariadne/` — SQLite database, hook scripts, SCIP cache
 - `.claude/settings.json` — Claude Code hooks (impact context on edit, auto-update, verify gate)
-- `.mcp.json` — MCP server config (9 read-only tools)
+- `.mcp.json` — MCP server config (12 read-only tools)
 - `ariadne.boundaries.json` — auto-generated architecture boundary config (monorepos)
 
 Then restart Claude Code in your project to pick up the hooks and MCP server.
@@ -85,6 +88,53 @@ bun run packages/cli/src/index.ts query module-graph --path packages/core/
 
 All commands output JSON. Symbol IDs are SCIP symbol strings returned by `search`.
 
+### Transitive impact analysis
+
+```bash
+# Full transitive impact with risk scoring
+bun run packages/cli/src/index.ts impact src/core.ts
+
+# Limit BFS depth
+bun run packages/cli/src/index.ts impact src/core.ts --max-depth 2
+
+# Include call graph traversal
+bun run packages/cli/src/index.ts impact src/core.ts --call-graph
+
+# Multiple files
+bun run packages/cli/src/index.ts impact src/core.ts src/utils.ts
+```
+
+Returns: changed symbols (with public API flag), affected files (with depth and reason), affected packages, public API breaks (with downstream consumers), test files (direct vs transitive), risk score and category (low/medium/high/critical), boundary violation risk.
+
+### Structural metrics
+
+```bash
+# Current metrics (coupling, cycles, API surface)
+bun run packages/cli/src/index.ts metrics
+
+# Save baseline snapshot
+bun run packages/cli/src/index.ts metrics --snapshot
+
+# Diff current vs baseline
+bun run packages/cli/src/index.ts metrics --diff
+```
+
+### Policy enforcement
+
+Create `ariadne.policies.json` in your project root:
+
+```json
+{
+  "policies": {
+    "deny_new_cycles": true,
+    "max_public_api_growth": 5,
+    "max_coupling_increase": 3
+  }
+}
+```
+
+Policies are checked automatically by `ariadne verify`. They compare current metrics against the saved baseline snapshot — run `ariadne metrics --snapshot` to establish the baseline.
+
 ## CLI commands
 
 | Command | Description |
@@ -99,7 +149,9 @@ All commands output JSON. Symbol IDs are SCIP symbol strings returned by `search
 | `query impact <path>... [--details]` | Changed files → impacted symbols → dependent files → recommended tests. `--details` adds symbol defs, docs, and up to 3 reference snippets per symbol. |
 | `query call-graph <symbol-id> [--depth N]` | Approximate call graph: callers and callees at the given depth (default 1) |
 | `query module-graph [--mode] [--path] [--format]` | File dependency graph (imports, semantic, or hybrid) |
-| `verify` | Run gatekeeper checks (exit 0 = OK, exit 1 = FAIL) |
+| `impact <path>... [--max-depth N] [--call-graph]` | Transitive impact analysis with risk scoring. BFS across symbol graph up to N depths (default 5). `--call-graph` includes caller traversal. |
+| `metrics [--snapshot] [--diff]` | Structural metrics: coupling (Ca/Ce/I), dependency cycles, API surface. `--snapshot` saves baseline, `--diff` compares against it. |
+| `verify` | Run gatekeeper checks including policy enforcement (exit 0 = OK, exit 1 = FAIL) |
 | `status` | Index stats (file count, symbol count, edge count, dirty count) |
 | `dirty mark <path>` | Mark a file as needing re-index |
 | `ledger log <event> <json>` | Append event to execution ledger |
@@ -107,7 +159,7 @@ All commands output JSON. Symbol IDs are SCIP symbol strings returned by `search
 
 ## MCP server
 
-The MCP server exposes 9 read-only tools for AI agents:
+The MCP server exposes 12 read-only tools for AI agents:
 
 | Tool | Description |
 |------|-------------|
@@ -115,6 +167,9 @@ The MCP server exposes 9 read-only tools for AI agents:
 | `ariadne.get_def` | Get symbol definition with docs and code snippet |
 | `ariadne.find_refs` | Find all references to a symbol (optionally scoped) |
 | `ariadne.impact` | Blast radius analysis for changed files (with optional `details` for symbol defs and key refs) |
+| `ariadne.transitive_impact` | Full transitive impact with risk scoring, public API break detection, and affected package mapping |
+| `ariadne.metrics` | Structural metrics: module coupling (Ca/Ce/instability), dependency cycles, API surface per package |
+| `ariadne.cycles` | Dependency cycle detection using Tarjan's SCC algorithm |
 | `ariadne.module_graph` | File dependency graph (imports/semantic/hybrid, json/dot/mermaid) |
 | `ariadne.symbol_graph` | Dependency subgraph centered on a specific symbol |
 | `ariadne.file_symbols` | List all symbols defined in a file |
@@ -163,6 +218,7 @@ All hooks guard against missing `.ariadne/` — they silently exit if the projec
 3. **Missing test runs** — checks the ledger for a `test_run` event after the most recent `edit`. Fails if no tests were run after editing.
 4. **Typecheck** — runs language-appropriate type checkers (`tsc --noEmit`, `go vet`, `cargo check`, `mvn compile`, `sbt compile`, `dotnet build`) against detected projects. Fails on any type errors. On failure, includes recommendations with `ariadne query impact` and `ariadne query search` commands for the affected files and identifiers. Skipped if no supported project is detected.
 5. **Architecture boundaries** — reads `ariadne.boundaries.json` and checks all `imports` edges against layer allowlists. Fails if any file imports from a layer not in its `canImport` list. Skipped if no config file exists.
+6. **Policy compliance** — reads `ariadne.policies.json` and compares current structural metrics against the saved baseline snapshot. Checks: `deny_new_cycles` (no new dependency cycles), `max_public_api_growth` (cap on new exported symbols per package), `max_coupling_increase` (cap on coupling metric increases per module). Skipped if no config file or no baseline snapshot exists.
 
 ## Architecture
 
@@ -182,9 +238,9 @@ graph TD
     end
 
     subgraph Consumption
-        F --> H[CLI Queries<br>search · refs · impact<br>call-graph · module-graph]
-        F --> I[MCP Server<br>9 read-only tools]
-        F --> J[Verify Engine<br>freshness · tests<br>typecheck · boundaries]
+        F --> H[CLI Queries<br>search · refs · impact<br>call-graph · module-graph<br>transitive-impact · metrics]
+        F --> I[MCP Server<br>12 read-only tools]
+        F --> J[Verify Engine<br>freshness · tests · typecheck<br>boundaries · policies]
     end
 
     subgraph Claude Code Hooks
@@ -223,20 +279,20 @@ Output formats: `json` (default), `dot` (Graphviz), `mermaid`.
 
 ```
 packages/
-  core/     ariadne-core library (360+ tests)
+  core/     ariadne-core library (420+ tests)
     src/
       store/       SQLite schema, queries, transactions
       scip/        protobuf parser + SCIP types + call graph derivation
       indexers/    scip-typescript, scip-python, scip-go, scip-rust, scip-java, scip-csharp, scip-ruby, import extractor, project detector, artifact extractor, config ref scanner
-      graph/       refs, impact analysis, call graph, module graph (import/semantic/hybrid), shared utils
-      verify/      gatekeeper engine + checks (freshness, tests, typecheck, boundaries)
+      graph/       refs, impact analysis (basic + transitive with risk scoring), call graph, module graph (import/semantic/hybrid), structural metrics (coupling, cycles, API surface), shared utils
+      verify/      gatekeeper engine + checks (freshness, tests, typecheck, boundaries, policies)
       ledger/      execution event log
   cli/      CLI command router + hooks
     src/
-      commands/    init, setup, index, update, query, verify, status, dirty, doctor, ledger
+      commands/    init, setup, index, update, query, verify, status, dirty, doctor, ledger, impact, metrics
       hooks/       pre-edit-impact.sh, post-edit.sh, post-test.sh, stop-verify.sh
       lib/         context, output helpers
-  mcp/      MCP stdio server (9 read-only tools)
+  mcp/      MCP stdio server (12 read-only tools)
 ```
 
 ## Performance
@@ -259,7 +315,7 @@ Hook latency stays under 200ms — fast enough to run on every edit without noti
 
 ```bash
 bun install
-bun test                  # 440+ tests across 23 files
+bun test                  # 497 tests across 27 files
 bunx tsc --noEmit         # type-check all packages
 bun run packages/cli/src/index.ts doctor  # check prerequisites
 ```

@@ -26,9 +26,13 @@ export type { ScipRange } from "./scip/types";
 export { GraphQueries } from "./graph/refs";
 export type { SymbolResult, DefResult, RefResult, CallGraphResult } from "./graph/refs";
 export { ImpactAnalyzer } from "./graph/impact";
-export type { ImpactResult, DetailedImpactResult, SymbolDetail, KeyRef } from "./graph/impact";
+export type { ImpactResult, DetailedImpactResult, SymbolDetail, KeyRef, TransitiveImpactResult } from "./graph/impact";
 export { ModuleGraph } from "./graph/modules";
 export type { ModuleGraphResult, GraphMode } from "./graph/modules";
+export { StructuralMetrics } from "./graph/metrics";
+export type { CouplingMetric, CycleInfo, CycleResult, PackageApiSurface, MetricsSnapshot, MetricsDiff } from "./graph/metrics";
+export { computeRiskScore } from "./graph/risk";
+export type { RiskInputs, RiskResult, RiskCategory } from "./graph/risk";
 
 // ── Verify ───────────────────────────────────────────────────────────────
 export { VerifyEngine } from "./verify/engine";
@@ -36,6 +40,8 @@ export type { VerifyReport } from "./verify/engine";
 export { checkBoundaries } from "./verify/checks/boundaries";
 export type { BoundaryConfig, BoundaryIssue, BoundaryCheckResult } from "./verify/checks/boundaries";
 export { redactReport, redactString } from "./verify/redact";
+export { checkPolicies } from "./verify/checks/policies";
+export type { PolicyConfig, PolicyIssue, PolicyCheckResult } from "./verify/checks/policies";
 
 // ── Indexers ─────────────────────────────────────────────────────────────
 export { extractImports, resolveModulePath } from "./indexers/import-extractor";

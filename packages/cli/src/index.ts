@@ -59,11 +59,21 @@ async function main() {
       runPostEdit(args.slice(1));
       break;
     }
+    case "impact": {
+      const { runImpact } = await import("./commands/impact");
+      await runImpact(args.slice(1));
+      break;
+    }
+    case "metrics": {
+      const { runMetrics } = await import("./commands/metrics");
+      await runMetrics(args.slice(1));
+      break;
+    }
     default: {
       const { outputError } = await import("./lib/output");
       outputError(
         "UNKNOWN_COMMAND",
-        `Unknown command: ${command}. Usage: ariadne <setup|init|index|update|query|verify|ledger|status|dirty|doctor|post-edit>`,
+        `Unknown command: ${command}. Usage: ariadne <setup|init|index|update|query|verify|ledger|status|dirty|doctor|post-edit|impact|metrics>`,
       );
     }
   }
