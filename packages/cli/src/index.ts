@@ -74,11 +74,21 @@ async function main() {
       await runCi(args.slice(1));
       break;
     }
+    case "context": {
+      const { runContext } = await import("./commands/context");
+      await runContext(args.slice(1));
+      break;
+    }
+    case "preflight": {
+      const { runPreflight } = await import("./commands/preflight");
+      await runPreflight(args.slice(1));
+      break;
+    }
     default: {
       const { outputError } = await import("./lib/output");
       outputError(
         "UNKNOWN_COMMAND",
-        `Unknown command: ${command}. Usage: ariadne <setup|init|index|update|query|verify|ledger|status|dirty|doctor|post-edit|impact|metrics|ci>`,
+        `Unknown command: ${command}. Usage: ariadne <setup|init|index|update|query|verify|ledger|status|dirty|doctor|post-edit|impact|metrics|ci|context|preflight>`,
       );
     }
   }

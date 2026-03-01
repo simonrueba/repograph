@@ -48,6 +48,6 @@ case "$REL_PATH" in
   *.test.*|*.spec.*|*__tests__/*|test_*|*_test.py|*_test.go|*_test.rs|*Test.java|*Test.kt|*Test.scala|*Spec.scala|*Tests.cs|*_test.rb|*_spec.rb) exit 0 ;;
 esac
 
-# Run impact analysis with --format=hook to get hookSpecificOutput directly
-# (avoids a second ~200ms bun startup for JSON→text formatting)
-$BIN query impact "$REL_PATH" --details --format=hook 2>/dev/null || true
+# Run preflight analysis (preferred) with fallback to legacy impact analysis
+$BIN preflight "$REL_PATH" --fast --format=hook 2>/dev/null || \
+  $BIN query impact "$REL_PATH" --details --format=hook 2>/dev/null || true

@@ -34,7 +34,7 @@ const TSC_ERROR_RE =
  * Parse a single tsc error line into its structured components.
  * Returns null if the line does not match the expected format.
  */
-function parseTscErrorLine(
+export function parseTscErrorLine(
   line: string,
   repoRoot: string,
 ): Pick<TypecheckIssue, "file" | "line" | "col" | "code" | "message"> | null {
@@ -72,7 +72,7 @@ function parseTscErrorLine(
  * message. tsc quotes names with single quotes: `'SomeName'`.
  * Returns null when nothing useful is found.
  */
-function extractIdentifier(errorMessage: string): string | null {
+export function extractIdentifier(errorMessage: string): string | null {
   // Match the first occurrence of 'SomeName' or `SomeName`
   const quoted = /['`]([A-Za-z_$][A-Za-z0-9_$.]*)['`]/.exec(errorMessage);
   return quoted ? quoted[1] : null;
@@ -165,7 +165,7 @@ function findTscCommand(repoRoot: string): { cmd: string; args: string[] } {
 }
 
 /** Parse tsc output into TypecheckIssue[] */
-function parseTscOutput(rawOutput: string, repoRoot: string): TypecheckIssue[] {
+export function parseTscOutput(rawOutput: string, repoRoot: string): TypecheckIssue[] {
   const errorLines = rawOutput
     .split("\n")
     .filter((l: string) => l.includes("error TS"))
@@ -201,7 +201,7 @@ function parseTscOutput(rawOutput: string, repoRoot: string): TypecheckIssue[] {
 // ./file.go:10:5: error message
 const GO_VET_ERROR_RE = /^\.?\/?([\w/.]+\.go):(\d+):(\d+):\s*(.+)$/;
 
-function parseGoVetOutput(rawOutput: string, repoRoot: string): TypecheckIssue[] {
+export function parseGoVetOutput(rawOutput: string, repoRoot: string): TypecheckIssue[] {
   return rawOutput
     .split("\n")
     .filter((l: string) => /\.go:\d+:\d+:/.test(l))
@@ -231,7 +231,7 @@ function parseGoVetOutput(rawOutput: string, repoRoot: string): TypecheckIssue[]
 const CARGO_ERROR_RE = /^\s*-->\s*([\w/.]+\.rs):(\d+):(\d+)/;
 const CARGO_CODE_RE = /^error\[([A-Z]\d+)\]/;
 
-function parseCargoOutput(rawOutput: string, repoRoot: string): TypecheckIssue[] {
+export function parseCargoOutput(rawOutput: string, repoRoot: string): TypecheckIssue[] {
   const issues: TypecheckIssue[] = [];
   const lines = rawOutput.split("\n");
   let currentCode = "";
@@ -266,7 +266,7 @@ function parseCargoOutput(rawOutput: string, repoRoot: string): TypecheckIssue[]
 // Matches lines like: file.java:10: error: message or file.cs(10,5): error CS1234: message
 const GENERIC_ERROR_RE = /^(.+?)[:(](\d+)[,:]?(\d*)\)?:?\s*(?:error\s*)?(.+)$/;
 
-function parseGenericOutput(rawOutput: string, repoRoot: string, filePattern: RegExp): TypecheckIssue[] {
+export function parseGenericOutput(rawOutput: string, repoRoot: string, filePattern: RegExp): TypecheckIssue[] {
   return rawOutput
     .split("\n")
     .filter((l: string) => filePattern.test(l) && /error/i.test(l))
