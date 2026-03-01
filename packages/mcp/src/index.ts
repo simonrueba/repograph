@@ -11,7 +11,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { join } from "node:path";
 
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 
 import {
   createDatabase,
@@ -65,9 +65,11 @@ function toErrorMessage(e: unknown): string {
 
 // ── MCP Server ───────────────────────────────────────────────────────
 
+const pkgJson = JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf-8"));
+
 const server = new McpServer({
   name: "ariadne",
-  version: "0.1.0",
+  version: pkgJson.version as string,
 });
 
 // Tool 1: search_symbol
