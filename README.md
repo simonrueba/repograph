@@ -18,13 +18,30 @@ No LLMs involved — just static analysis.
 
 ## Install
 
+### Standalone binary (recommended)
+
+Download the prebuilt binary for your platform:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/simonrueba/ariadne/main/scripts/install.sh | bash
+```
+
+Or specify a version: `ARIADNE_VERSION=v0.2.0 curl -fsSL ... | bash`
+
+Then set up on your project:
+
+```bash
+ariadne setup /path/to/your/project
+```
+
+### From source
+
 **Requires [Bun](https://bun.sh) >= 1.0**
 
 ```bash
-# Clone and install
 git clone https://github.com/simonrueba/ariadne.git && cd ariadne && bun install
 
-# Set up on your project (one command — init + index + hooks + MCP config)
+# Set up on your project
 bun run packages/cli/src/index.ts setup /path/to/your/project
 ```
 
