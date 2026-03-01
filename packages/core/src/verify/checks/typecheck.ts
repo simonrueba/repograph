@@ -1,4 +1,4 @@
-import { execSync, exec } from "child_process";
+import { execFileSync, execFile } from "child_process";
 import { existsSync, readdirSync } from "fs";
 import { join, relative } from "path";
 
@@ -156,12 +156,12 @@ export function suggestQueries(
 }
 
 /** Find the tsc binary — prefer local node_modules, fall back to bunx. */
-function findTscCommand(repoRoot: string): string {
+function findTscCommand(repoRoot: string): { cmd: string; args: string[] } {
   const localTsc = join(repoRoot, "node_modules", ".bin", "tsc");
   if (existsSync(localTsc)) {
-    return localTsc;
+    return { cmd: localTsc, args: [] };
   }
-  return "bunx tsc";
+  return { cmd: "bunx", args: ["tsc"] };
 }
 
 /** Parse tsc output into TypecheckIssue[] */
@@ -302,9 +302,9 @@ export function checkTypecheck(repoRoot: string): TypecheckResult {
   const tsconfigPath = join(repoRoot, "tsconfig.json");
   if (existsSync(tsconfigPath)) {
     anyCheckerRan = true;
-    const tsc = findTscCommand(repoRoot);
+    const { cmd: tscCmd, args: tscArgs } = findTscCommand(repoRoot);
     try {
-      execSync(`${tsc} --noEmit -p ${tsconfigPath}`, {
+      execFileSync(tscCmd, [...tscArgs, "--noEmit", "-p", tsconfigPath], {
         cwd: repoRoot,
         stdio: ["pipe", "pipe", "pipe"],
         timeout: 120_000,
@@ -321,7 +321,7 @@ export function checkTypecheck(repoRoot: string): TypecheckResult {
   if (existsSync(join(repoRoot, "go.mod"))) {
     anyCheckerRan = true;
     try {
-      execSync("go vet ./...", {
+      execFileSync("go", ["vet", "./..."], {
         cwd: repoRoot,
         stdio: ["pipe", "pipe", "pipe"],
         timeout: 120_000,
@@ -338,11 +338,10 @@ export function checkTypecheck(repoRoot: string): TypecheckResult {
   if (existsSync(join(repoRoot, "Cargo.toml"))) {
     anyCheckerRan = true;
     try {
-      execSync("cargo check --message-format=short 2>&1", {
+      execFileSync("cargo", ["check", "--message-format=short"], {
         cwd: repoRoot,
         stdio: ["pipe", "pipe", "pipe"],
         timeout: 180_000,
-        shell: true,
       });
     } catch (err: unknown) {
       const anyErr = err as { stdout?: Buffer; stderr?: Buffer };
@@ -355,11 +354,11 @@ export function checkTypecheck(repoRoot: string): TypecheckResult {
   // Java: mvn compile (or javac)
   if (existsSync(join(repoRoot, "pom.xml")) || existsSync(join(repoRoot, "build.gradle")) || existsSync(join(repoRoot, "build.gradle.kts"))) {
     anyCheckerRan = true;
-    const cmd = existsSync(join(repoRoot, "pom.xml"))
-      ? "mvn compile -q"
-      : "gradle compileJava -q";
+    const [javaCmd, ...javaArgs] = existsSync(join(repoRoot, "pom.xml"))
+      ? ["mvn", "compile", "-q"]
+      : ["gradle", "compileJava", "-q"];
     try {
-      execSync(cmd, {
+      execFileSync(javaCmd, javaArgs, {
         cwd: repoRoot,
         stdio: ["pipe", "pipe", "pipe"],
         timeout: 180_000,
@@ -382,7 +381,7 @@ export function checkTypecheck(repoRoot: string): TypecheckResult {
     if (hasCsharp) {
       anyCheckerRan = true;
       try {
-        execSync("dotnet build --no-restore -v q", {
+        execFileSync("dotnet", ["build", "--no-restore", "-v", "q"], {
           cwd: repoRoot,
           stdio: ["pipe", "pipe", "pipe"],
           timeout: 180_000,
@@ -400,7 +399,7 @@ export function checkTypecheck(repoRoot: string): TypecheckResult {
   if (existsSync(join(repoRoot, "build.sbt"))) {
     anyCheckerRan = true;
     try {
-      execSync("sbt compile -q", {
+      execFileSync("sbt", ["compile", "-q"], {
         cwd: repoRoot,
         stdio: ["pipe", "pipe", "pipe"],
         timeout: 180_000,
@@ -417,11 +416,10 @@ export function checkTypecheck(repoRoot: string): TypecheckResult {
   if (existsSync(join(repoRoot, "Gemfile"))) {
     anyCheckerRan = true;
     try {
-      execSync("ruby -c -e '' 2>&1", {
+      execFileSync("ruby", ["-c", "-e", ""], {
         cwd: repoRoot,
         stdio: ["pipe", "pipe", "pipe"],
         timeout: 60_000,
-        shell: true,
       });
     } catch { /* ruby -c on empty string always passes; real check is rubocop */ }
   }
@@ -443,10 +441,10 @@ export function checkTypecheckAsync(repoRoot: string): Promise<TypecheckResult> 
   // TypeScript
   const tsconfigPath = join(repoRoot, "tsconfig.json");
   if (existsSync(tsconfigPath)) {
-    const tsc = findTscCommand(repoRoot);
+    const { cmd: tscCmd2, args: tscArgs2 } = findTscCommand(repoRoot);
     checkers.push(
       new Promise((resolve) => {
-        exec(`${tsc} --noEmit -p ${tsconfigPath}`, { cwd: repoRoot, timeout: 120_000 }, (error, stdout, stderr) => {
+        execFile(tscCmd2, [...tscArgs2, "--noEmit", "-p", tsconfigPath], { cwd: repoRoot, timeout: 120_000 }, (error, stdout, stderr) => {
           if (!error) { resolve([]); return; }
           resolve(parseTscOutput((stdout ?? "") + (stderr ?? ""), repoRoot));
         });
@@ -458,7 +456,7 @@ export function checkTypecheckAsync(repoRoot: string): Promise<TypecheckResult> 
   if (existsSync(join(repoRoot, "go.mod"))) {
     checkers.push(
       new Promise((resolve) => {
-        exec("go vet ./...", { cwd: repoRoot, timeout: 120_000 }, (error, stdout, stderr) => {
+        execFile("go", ["vet", "./..."], { cwd: repoRoot, timeout: 120_000 }, (error, stdout, stderr) => {
           if (!error) { resolve([]); return; }
           resolve(parseGoVetOutput((stdout ?? "") + (stderr ?? ""), repoRoot));
         });
@@ -470,7 +468,7 @@ export function checkTypecheckAsync(repoRoot: string): Promise<TypecheckResult> 
   if (existsSync(join(repoRoot, "Cargo.toml"))) {
     checkers.push(
       new Promise((resolve) => {
-        exec("cargo check --message-format=short 2>&1", { cwd: repoRoot, timeout: 180_000 }, (error, stdout, stderr) => {
+        execFile("cargo", ["check", "--message-format=short"], { cwd: repoRoot, timeout: 180_000 }, (error, stdout, stderr) => {
           if (!error) { resolve([]); return; }
           resolve(parseCargoOutput((stdout ?? "") + (stderr ?? ""), repoRoot));
         });
@@ -480,12 +478,12 @@ export function checkTypecheckAsync(repoRoot: string): Promise<TypecheckResult> 
 
   // Java
   if (existsSync(join(repoRoot, "pom.xml")) || existsSync(join(repoRoot, "build.gradle")) || existsSync(join(repoRoot, "build.gradle.kts"))) {
-    const cmd = existsSync(join(repoRoot, "pom.xml"))
-      ? "mvn compile -q"
-      : "gradle compileJava -q";
+    const [javaCmd2, ...javaArgs2] = existsSync(join(repoRoot, "pom.xml"))
+      ? ["mvn", "compile", "-q"]
+      : ["gradle", "compileJava", "-q"];
     checkers.push(
       new Promise((resolve) => {
-        exec(cmd, { cwd: repoRoot, timeout: 180_000 }, (error, stdout, stderr) => {
+        execFile(javaCmd2, javaArgs2, { cwd: repoRoot, timeout: 180_000 }, (error, stdout, stderr) => {
           if (!error) { resolve([]); return; }
           resolve(parseGenericOutput((stdout ?? "") + (stderr ?? ""), repoRoot, /\.java|\.kt/));
         });
@@ -503,7 +501,7 @@ export function checkTypecheckAsync(repoRoot: string): Promise<TypecheckResult> 
     if (hasCsharp) {
       checkers.push(
         new Promise((resolve) => {
-          exec("dotnet build --no-restore -v q", { cwd: repoRoot, timeout: 180_000 }, (error, stdout, stderr) => {
+          execFile("dotnet", ["build", "--no-restore", "-v", "q"], { cwd: repoRoot, timeout: 180_000 }, (error, stdout, stderr) => {
             if (!error) { resolve([]); return; }
             resolve(parseGenericOutput((stdout ?? "") + (stderr ?? ""), repoRoot, /\.cs/));
           });
@@ -516,7 +514,7 @@ export function checkTypecheckAsync(repoRoot: string): Promise<TypecheckResult> 
   if (existsSync(join(repoRoot, "build.sbt"))) {
     checkers.push(
       new Promise((resolve) => {
-        exec("sbt compile -q", { cwd: repoRoot, timeout: 180_000 }, (error, stdout, stderr) => {
+        execFile("sbt", ["compile", "-q"], { cwd: repoRoot, timeout: 180_000 }, (error, stdout, stderr) => {
           if (!error) { resolve([]); return; }
           resolve(parseGenericOutput((stdout ?? "") + (stderr ?? ""), repoRoot, /\.scala/));
         });
