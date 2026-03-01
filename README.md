@@ -38,6 +38,38 @@ This creates:
 
 Then restart Claude Code in your project to pick up the hooks and MCP server.
 
+### GitHub Action (CI)
+
+Add structural analysis to your pull requests with a single workflow file:
+
+```yaml
+# .github/workflows/ariadne.yml
+name: Ariadne Structural Guard
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  structural-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: simonrueba/ariadne-action@v1
+        with:
+          comment: 'true'
+          fail-on-policy: 'true'
+```
+
+This posts a PR comment with impact radius, risk score, public API breaks, new cycles, test coverage, and policy status. See [`action/`](action/) for full configuration options.
+
 ### Manual setup (step by step)
 
 ```bash
@@ -151,6 +183,7 @@ Policies are checked automatically by `ariadne verify`. They compare current met
 | `query module-graph [--mode] [--path] [--format]` | File dependency graph (imports, semantic, or hybrid) |
 | `impact <path>... [--max-depth N] [--call-graph]` | Transitive impact analysis with risk scoring. BFS across symbol graph up to N depths (default 5). `--call-graph` includes caller traversal. |
 | `metrics [--snapshot] [--diff]` | Structural metrics: coupling (Ca/Ce/I), dependency cycles, API surface. `--snapshot` saves baseline, `--diff` compares against it. |
+| `ci [--base branch] [--markdown] [--root path]` | CI command: runs impact + verify + metrics on changed files vs base branch. Outputs JSON (default) or `--markdown` for PR comments. |
 | `verify` | Run gatekeeper checks including policy enforcement (exit 0 = OK, exit 1 = FAIL) |
 | `status` | Index stats (file count, symbol count, edge count, dirty count) |
 | `dirty mark <path>` | Mark a file as needing re-index |
@@ -186,6 +219,20 @@ The MCP server exposes 12 read-only tools for AI agents:
     "ariadne": {
       "command": "bun",
       "args": ["run", "/path/to/ariadne/packages/mcp/src/index.ts"],
+      "env": { "ARIADNE_ROOT": "." }
+    }
+  }
+}
+```
+
+If you installed via npm (`bun add --global ariadne-mcp`), use:
+
+```json
+{
+  "mcpServers": {
+    "ariadne": {
+      "command": "bunx",
+      "args": ["ariadne-mcp"],
       "env": { "ARIADNE_ROOT": "." }
     }
   }
@@ -279,7 +326,7 @@ Output formats: `json` (default), `dot` (Graphviz), `mermaid`.
 
 ```
 packages/
-  core/     ariadne-core library (420+ tests)
+  core/     ariadne-core library (497 tests)
     src/
       store/       SQLite schema, queries, transactions
       scip/        protobuf parser + SCIP types + call graph derivation
@@ -289,7 +336,7 @@ packages/
       ledger/      execution event log
   cli/      CLI command router + hooks
     src/
-      commands/    init, setup, index, update, query, verify, status, dirty, doctor, ledger, impact, metrics
+      commands/    init, setup, index, update, query, verify, status, dirty, doctor, ledger, impact, metrics, ci
       hooks/       pre-edit-impact.sh, post-edit.sh, post-test.sh, stop-verify.sh
       lib/         context, output helpers
   mcp/      MCP stdio server (12 read-only tools)
