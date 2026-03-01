@@ -1,0 +1,128 @@
+name: 'Ariadne Structural Guard'
+description: 'Structural analysis and policy enforcement for PRs — impact radius, risk scoring, cycle detection, boundary checks'
+author: 'simonrueba'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  comment:
+    description: 'Post analysis as PR comment'
+    required: false
+    default: 'true'
+  fail-on-policy:
+    description: 'Fail the action if policy is violated'
+    required: false
+    default: 'true'
+  base-branch:
+    description: 'Base branch to diff against (auto-detected from PR if omitted)'
+    required: false
+    default: ''
+  quick:
+    description: 'Skip SCIP indexing (faster, structural imports only)'
+    required: false
+    default: 'true'
+
+outputs:
+  risk-score:
+    description: 'Risk score (0.0 - 1.0)'
+    value: ${{ steps.analysis.outputs.risk-score }}
+  risk-category:
+    description: 'Risk category (low / medium / high / critical)'
+    value: ${{ steps.analysis.outputs.risk-category }}
+  policy-passed:
+    description: 'Whether all policies passed (true / false)'
+    value: ${{ steps.analysis.outputs.policy-passed }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
+
+    - name: Install Ariadne
+      shell: bash
+      run: bun add --global ariadne-cli
+
+    - name: Setup Index
+      shell: bash
+      run: |
+        QUICK_FLAG=""
+        if [ "${{ inputs.quick }}" == "true" ]; then
+          QUICK_FLAG="--quick"
+        fi
+        ariadne setup $QUICK_FLAG
+
+    - name: Run Analysis
+      id: analysis
+      shell: bash
+      run: |
+        BASE="${{ inputs.base-branch }}"
+        if [ -z "$BASE" ]; then
+          BASE="${{ github.base_ref }}"
+        fi
+        if [ -z "$BASE" ]; then
+          BASE="main"
+        fi
+
+        # Run CI command — JSON to stdout, markdown to file
+        REPORT=$(ariadne ci --base "$BASE" 2>/dev/null || true)
+        ariadne ci --base "$BASE" --markdown > /tmp/ariadne-comment.md 2>/dev/null || true
+
+        # Extract summary values
+        if echo "$REPORT" | jq -e '.data.summary' > /dev/null 2>&1; then
+          echo "risk-score=$(echo "$REPORT" | jq -r '.data.summary.riskScore')" >> "$GITHUB_OUTPUT"
+          echo "risk-category=$(echo "$REPORT" | jq -r '.data.summary.riskCategory')" >> "$GITHUB_OUTPUT"
+          echo "policy-passed=$(echo "$REPORT" | jq -r '.data.summary.policyPassed')" >> "$GITHUB_OUTPUT"
+        else
+          echo "risk-score=0" >> "$GITHUB_OUTPUT"
+          echo "risk-category=unknown" >> "$GITHUB_OUTPUT"
+          echo "policy-passed=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Post PR Comment
+      if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          let body;
+          try {
+            body = fs.readFileSync('/tmp/ariadne-comment.md', 'utf8');
+          } catch {
+            body = '## Ariadne Structural Report\n\nAnalysis could not be generated.';
+          }
+
+          const marker = 'Ariadne Structural Report';
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+
+          const existing = comments.find(c => c.body && c.body.includes(marker));
+          if (existing) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existing.id,
+              body,
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+          }
+
+    - name: Check Policy
+      if: inputs.fail-on-policy == 'true'
+      shell: bash
+      run: |
+        if [ "${{ steps.analysis.outputs.policy-passed }}" == "false" ]; then
+          echo "::error::Ariadne policy check failed. See PR comment for details."
+          exit 1
+        fi

@@ -1,0 +1,25 @@
+# .github/workflows/ariadne.yml
+# Copy this file into your repo to enable Ariadne structural analysis on PRs.
+
+name: Ariadne Structural Guard
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  structural-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: simonrueba/ariadne-action@v1
+        with:
+          comment: 'true'
+          fail-on-policy: 'true'

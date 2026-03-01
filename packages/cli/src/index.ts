@@ -69,11 +69,16 @@ async function main() {
       await runMetrics(args.slice(1));
       break;
     }
+    case "ci": {
+      const { runCi } = await import("./commands/ci");
+      await runCi(args.slice(1));
+      break;
+    }
     default: {
       const { outputError } = await import("./lib/output");
       outputError(
         "UNKNOWN_COMMAND",
-        `Unknown command: ${command}. Usage: ariadne <setup|init|index|update|query|verify|ledger|status|dirty|doctor|post-edit|impact|metrics>`,
+        `Unknown command: ${command}. Usage: ariadne <setup|init|index|update|query|verify|ledger|status|dirty|doctor|post-edit|impact|metrics|ci>`,
       );
     }
   }
