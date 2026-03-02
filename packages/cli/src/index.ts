@@ -84,11 +84,16 @@ async function main() {
       await runPreflight(args.slice(1));
       break;
     }
+    case "scope": {
+      const { runScope } = await import("./commands/scope");
+      runScope(args.slice(1));
+      break;
+    }
     default: {
       const { outputError } = await import("./lib/output");
       outputError(
         "UNKNOWN_COMMAND",
-        `Unknown command: ${command}. Usage: ariadne <setup|init|index|update|query|verify|ledger|status|dirty|doctor|post-edit|impact|metrics|ci|context|preflight>`,
+        `Unknown command: ${command}. Usage: ariadne <setup|init|index|update|query|verify|ledger|status|dirty|doctor|post-edit|impact|metrics|ci|context|preflight|scope>`,
       );
     }
   }

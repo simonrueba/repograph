@@ -22,6 +22,7 @@ import {
   StructuralMetrics,
   ContextCompiler,
   PreflightAnalyzer,
+  ScopeAnalyzer,
   type ModuleGraphResult,
 } from "ariadne-core";
 
@@ -46,6 +47,7 @@ const modules = new ModuleGraph(store);
 const metrics = new StructuralMetrics(store, repoRoot);
 const contextCompiler = new ContextCompiler(store, repoRoot);
 const preflight = new PreflightAnalyzer(store, repoRoot);
+const scopeAnalyzer = new ScopeAnalyzer(store, repoRoot);
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -449,6 +451,56 @@ server.registerTool(
   async ({ path, fast }) => {
     try {
       return ok(preflight.analyze(path, { fast: fast ?? false }));
+    } catch (e: unknown) {
+      return err(toErrorMessage(e));
+    }
+  },
+);
+
+// Tool 15: scope
+server.registerTool(
+  "ariadne.scope",
+  {
+    title: "Agent Scope",
+    description: "Compute ranked, token-budgeted context for an agent task. Returns files and symbols in three tiers (must-have, should-have, nice-to-have) optimized for LLM context window injection. Use this before editing files to get exactly the context you need.",
+    inputSchema: {
+      files: z.array(z.string()).describe("Changed or target file paths relative to repo root"),
+      budget: z
+        .number()
+        .optional()
+        .describe("Token budget for the entire context (default 50000)"),
+      depth: z
+        .number()
+        .optional()
+        .describe("Max BFS depth for transitive context (default 3)"),
+      includeTests: z
+        .boolean()
+        .optional()
+        .describe("Include test files in the scope (default true)"),
+    },
+    annotations: READ_ONLY,
+  },
+  async ({ files, budget, depth, includeTests }) => {
+    try {
+      const result = scopeAnalyzer.scope(files, { budget, depth, includeTests });
+      // Strip full file content from MCP response — too large for tool output.
+      // Return metadata + symbols. Agent can read specific files it needs.
+      return ok({
+        ...result,
+        files: result.files.map((f) => ({
+          path: f.path,
+          tier: f.tier,
+          depth: f.depth,
+          reason: f.reason,
+          symbols: f.symbols.map((s) => ({
+            name: s.name,
+            kind: s.kind,
+            isExported: s.isExported,
+            signature: s.signature,
+          })),
+          tokenEstimate: f.tokenEstimate,
+        })),
+      });
     } catch (e: unknown) {
       return err(toErrorMessage(e));
     }

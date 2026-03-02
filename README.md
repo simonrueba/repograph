@@ -198,7 +198,7 @@ Policies are checked automatically by `ariadne verify`. They compare current met
 
 | Command | Description |
 |---------|-------------|
-| `setup [path] [--quick]` | One-command setup: init + index + generate hooks & MCP config. `--quick` skips SCIP. |
+| `setup [path] [--quick] [--preset name]` | One-command setup: init + index + generate hooks & MCP config. `--quick` skips SCIP. `--preset` writes an `ariadne.policies.json` from a built-in preset (`default`, `monorepo-strict`, `library-public-api`). |
 | `init [path]` | Create `.ariadne/` directory and SQLite database |
 | `index [path] [--structural-only]` | Full index: structural imports + SCIP analysis. `--structural-only` skips SCIP. |
 | `update [--full] [--reingest] [--files path...]` | Incremental update: structural imports + auto SCIP when dirty source files exist. `--files` processes only the specified files (used by hooks for fast single-file updates). `--full` forces SCIP even when clean. `--reingest` forces SCIP re-ingestion even when file contents haven't changed (needed after package renames where symbol IDs change). |
@@ -212,7 +212,9 @@ Policies are checked automatically by `ariadne verify`. They compare current met
 | `metrics [--snapshot] [--diff]` | Structural metrics: coupling (Ca/Ce/I), dependency cycles, API surface. `--snapshot` saves baseline, `--diff` compares against it. |
 | `context <path>... [--depth N] [--mode]` | Compile agent-friendly context for files: symbols, imports, importers, semantic refs. Modes: `compact` (default), `full`, `symbols-only`. |
 | `preflight <path>... [--depth N]` | Pre-edit blast radius analysis: symbols defined in files, their call sites across the codebase, boundary violations, and risk assessment. |
-| `ci [--base branch] [--markdown] [--root path]` | CI command: runs impact + verify + metrics on changed files vs base branch. Outputs JSON (default) or `--markdown` for PR comments. |
+| `ci [--base branch] [--markdown] [--root path]` | CI command: runs impact + verify + metrics on changed files vs base branch. Outputs structured JSON with risk breakdown, affected symbols, test gap analysis, and actionable recommendations; or `--markdown` for rich PR comments. |
+| `scope <path>... [--budget N] [--depth N]` | Compute ranked, token-budgeted context for an agent task. Returns files and symbols in three tiers (must-have / should-have / nice-to-have) optimized for LLM context window injection. |
+| `post-edit <path>` | Combined dirty mark + targeted structural update + ledger log in a single process invocation. Used by hooks. |
 | `verify` | Run gatekeeper checks including policy enforcement (exit 0 = OK, exit 1 = FAIL) |
 | `status` | Index stats (file count, symbol count, edge count, dirty count) |
 | `dirty mark <path>` | Mark a file as needing re-index |
@@ -221,7 +223,7 @@ Policies are checked automatically by `ariadne verify`. They compare current met
 
 ## MCP server
 
-The MCP server exposes 14 read-only tools for AI agents:
+The MCP server exposes 15 read-only tools for AI agents:
 
 | Tool | Description |
 |------|-------------|
@@ -230,6 +232,7 @@ The MCP server exposes 14 read-only tools for AI agents:
 | `ariadne.find_refs` | Find all references to a symbol (optionally scoped) |
 | `ariadne.impact` | Blast radius analysis for changed files (with optional `details` for symbol defs and key refs) |
 | `ariadne.transitive_impact` | Full transitive impact with risk scoring, public API break detection, and affected package mapping |
+| `ariadne.scope` | Ranked, token-budgeted context for agent tasks — returns three tiers (must-have / should-have / nice-to-have) with symbol-level detail |
 | `ariadne.metrics` | Structural metrics: module coupling (Ca/Ce/instability), dependency cycles, API surface per package |
 | `ariadne.cycles` | Dependency cycle detection using Tarjan's SCC algorithm |
 | `ariadne.module_graph` | File dependency graph (imports/semantic/hybrid, json/dot/mermaid) |
@@ -278,10 +281,11 @@ The MCP server starts gracefully even if `.ariadne/` doesn't exist yet — it cr
 
 ### What the hooks do
 
-- **Pre-edit impact hook** (`Edit|Write` PreToolUse): runs `ariadne impact` before every source file edit and injects the blast radius (changed symbols, dependent files, recommended tests) as context so Claude sees what will be affected. Silently skips test files, non-source files, and uninitialized projects. ~240ms latency.
-- **Post-edit hook** (`Edit|Write` PostToolUse): marks edited source files dirty, runs `ariadne update --files <path>` for fast single-file updates (no full repo walk), logs the edit to the ledger. Non-source files (README, config, etc.) are skipped to avoid false-positive freshness failures.
-- **Post-test hook** (`Bash` PostToolUse): detects test runner commands (vitest, jest, pytest, bun test, mocha, ava, cargo test, go test, mvn test, dotnet test, sbt test, bundle exec, playwright), logs `test_run` to the ledger
-- **Stop hook**: runs `ariadne update` (auto-triggers SCIP when dirty source files exist), then `ariadne verify`. On failure, outputs `{"decision":"block","reason":"..."}` to prevent Claude from stopping until issues are fixed
+- **Session context hook** (`SessionStart` on startup/resume/compact): injects a one-line status summary — file count, symbol count, dirty file warnings, stale index warnings, and available tool reminders. Ensures the agent always knows the project state, especially after context compaction.
+- **Pre-edit impact hook** (`Edit|Write` PreToolUse): runs `ariadne preflight --fast` before every source file edit and injects the blast radius (changed symbols, dependent files, recommended tests) as context so Claude sees what will be affected. Silently skips test files, non-source files, and uninitialized projects. ~240ms latency.
+- **Post-edit hook** (`Edit|Write` PostToolUse): marks edited source files dirty, runs `ariadne post-edit <path>` for combined dirty mark + targeted structural update + ledger log in a single process. Spawns background SCIP reindex when dirty file count exceeds threshold (default 5).
+- **Post-test hook** (`Bash` PostToolUse): detects test runner commands (vitest, jest, pytest, bun test, mocha, ava, cargo test, go test, playwright), extracts pass/fail from tool response, logs `test_run` with result to the ledger.
+- **Stop hook**: runs `ariadne update` (auto-triggers SCIP when dirty source files exist), then `ariadne verify`. On failure, outputs `{"decision":"block","reason":"..."}` to prevent Claude from stopping until issues are fixed.
 
 The stop hook uses atomic `mkdir`-based locking to prevent concurrent runs, checks `stop_hook_active` from stdin to prevent infinite loops, and has a 120s stale lock timeout.
 
@@ -316,15 +320,16 @@ graph TD
     end
 
     subgraph Consumption
-        F --> H[CLI Queries<br>search · refs · impact<br>call-graph · module-graph<br>transitive-impact · metrics<br>context · preflight]
-        F --> I[MCP Server<br>14 read-only tools]
+        F --> H[CLI Queries<br>search · refs · impact<br>call-graph · module-graph<br>transitive-impact · metrics<br>context · preflight · scope · ci]
+        F --> I[MCP Server<br>15 read-only tools]
         F --> J[Verify Engine<br>freshness · tests · typecheck<br>boundaries · policies]
     end
 
     subgraph Claude Code Hooks
-        K[Pre-edit] -->|impact context| H
+        O[Session start] -->|inject status context| H
+        K[Pre-edit] -->|preflight context| H
         L[Post-edit] -->|dirty mark + update| F
-        M[Post-test] -->|ledger log| F
+        M[Post-test] -->|ledger log with result| F
         N[Stop] -->|update + verify| J
     end
 ```
@@ -357,25 +362,25 @@ Output formats: `json` (default), `dot` (Graphviz), `mermaid`.
 
 ```
 packages/
-  core/     ariadne-core library (636 tests)
+  core/     ariadne-core library (701 tests)
     src/
       store/       SQLite schema, queries (7 focused query classes + facade), types, transactions
       scip/        protobuf parser + SCIP types + call graph derivation
       indexers/    scip-typescript, scip-python, scip-go, scip-rust, scip-java, scip-csharp, scip-ruby, import extractor, project detector, artifact extractor, config ref scanner
-      graph/       refs, impact analysis (basic + transitive with risk scoring), call graph, module graph (import/semantic/hybrid), structural metrics (coupling, cycles, API surface), context compiler, preflight analyzer, shared utils
+      graph/       refs, impact analysis (basic + transitive with risk scoring + co-located test detection), call graph, module graph (import/semantic/hybrid), structural metrics (coupling, cycles, API surface), context compiler, scope analyzer, preflight analyzer, risk breakdown, shared utils
       verify/      gatekeeper engine + checks (freshness, tests, typecheck, boundaries, policies)
       ledger/      execution event log
   cli/      CLI command router + hooks
     src/
-      commands/    init, setup, index, update, query, verify, status, dirty, doctor, ledger, impact, metrics, ci, context, preflight
-      hooks/       pre-edit-impact.sh, post-edit.sh, post-test.sh, stop-verify.sh
-      lib/         context, output helpers
-  mcp/      MCP stdio server (14 read-only tools)
+      commands/    init, setup, index, update, query, verify, status, dirty, doctor, ledger, impact, metrics, ci, context, preflight, scope, post-edit
+      hooks/       session-context.sh, pre-edit-impact.sh, post-edit.sh, post-test.sh, stop-verify.sh
+      lib/         context, output helpers, policy presets
+  mcp/      MCP stdio server (15 read-only tools)
 ```
 
 ## Performance
 
-Benchmarked on Ariadne's own codebase (95 files, 3 sub-projects). Apple M3.
+Benchmarked on Ariadne's own codebase (107 files, 3 sub-projects). Apple M3.
 
 | Operation | Time | Notes |
 |-----------|------|-------|
@@ -393,7 +398,7 @@ Hook latency stays under 200ms — fast enough to run on every edit without noti
 
 ```bash
 bun install
-bun test                  # 636 tests across 29 files
+bun test                  # 701 tests across 38 files
 bunx tsc --noEmit         # type-check all packages
 bun run packages/cli/src/index.ts doctor  # check prerequisites
 ```

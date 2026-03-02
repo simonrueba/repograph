@@ -232,4 +232,24 @@ describe("computeTransitiveImpact", () => {
 
     expect(result.testCount).toBe(result.testFiles.length);
   });
+
+  it("should include riskBreakdown in result", () => {
+    const result = analyzer.computeTransitiveImpact(["src/core.ts"]);
+
+    expect(result.riskBreakdown).toBeDefined();
+    expect(typeof result.riskBreakdown.fileSpread).toBe("number");
+    expect(typeof result.riskBreakdown.publicApiBreak).toBe("number");
+    expect(typeof result.riskBreakdown.packageSpread).toBe("number");
+    expect(typeof result.riskBreakdown.testGap).toBe("number");
+    expect(typeof result.riskBreakdown.boundary).toBe("number");
+  });
+
+  it("should have riskBreakdown values between 0 and 1", () => {
+    const result = analyzer.computeTransitiveImpact(["src/core.ts"]);
+
+    for (const value of Object.values(result.riskBreakdown)) {
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThanOrEqual(1);
+    }
+  });
 });

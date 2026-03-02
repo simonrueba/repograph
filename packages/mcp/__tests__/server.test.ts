@@ -156,11 +156,11 @@ export function greet(name: string): string {
 
   // ── Tool listing ──────────────────────────────────────────────────
 
-  it("should list all 14 tools", async () => {
+  it("should list all 15 tools", async () => {
     const response = await sendRequest(serverProc, "tools/list");
     const tools = response.result.tools;
 
-    expect(tools).toHaveLength(14);
+    expect(tools).toHaveLength(15);
     const names = tools.map((t: any) => t.name).sort();
     expect(names).toEqual([
       "ariadne.call_graph",
@@ -173,6 +173,7 @@ export function greet(name: string): string {
       "ariadne.module_graph",
       "ariadne.plan_context",
       "ariadne.preflight",
+      "ariadne.scope",
       "ariadne.search_symbol",
       "ariadne.status",
       "ariadne.symbol_graph",
