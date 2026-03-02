@@ -137,7 +137,7 @@ export async function runSetup(args: string[]): Promise<void> {
   const hooksDir = join(ariadneDir, "hooks");
   mkdirSync(hooksDir, { recursive: true });
   const srcHooksDir = join(import.meta.dir, "..", "hooks");
-  for (const hookFile of ["post-edit.sh", "post-test.sh", "stop-verify.sh", "pre-edit-impact.sh"]) {
+  for (const hookFile of ["session-context.sh", "pre-edit-impact.sh", "post-edit.sh", "post-test.sh", "stop-verify.sh"]) {
     const src = join(srcHooksDir, hookFile);
     const dest = join(hooksDir, hookFile);
     if (existsSync(src)) {
@@ -190,6 +190,18 @@ export async function runSetup(args: string[]): Promise<void> {
 function generateHooksConfig(): object {
   return {
     hooks: {
+      SessionStart: [
+        {
+          matcher: "startup|resume|compact",
+          hooks: [
+            {
+              type: "command",
+              command: "bash .ariadne/hooks/session-context.sh",
+              timeout: 5,
+            },
+          ],
+        },
+      ],
       PreToolUse: [
         {
           matcher: "Edit|Write",
@@ -197,6 +209,7 @@ function generateHooksConfig(): object {
             {
               type: "command",
               command: "bash .ariadne/hooks/pre-edit-impact.sh",
+              timeout: 10,
             },
           ],
         },
@@ -208,6 +221,7 @@ function generateHooksConfig(): object {
             {
               type: "command",
               command: "bash .ariadne/hooks/post-edit.sh",
+              timeout: 15,
             },
           ],
         },
@@ -217,6 +231,7 @@ function generateHooksConfig(): object {
             {
               type: "command",
               command: "bash .ariadne/hooks/post-test.sh",
+              timeout: 10,
             },
           ],
         },
@@ -227,6 +242,7 @@ function generateHooksConfig(): object {
             {
               type: "command",
               command: "bash .ariadne/hooks/stop-verify.sh",
+              timeout: 60,
             },
           ],
         },

@@ -1,17 +1,25 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .ariadne/hooks/session-context.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/block-main-branch.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "bash .ariadne/hooks/pre-edit-impact.sh"
+            "command": "bash .ariadne/hooks/pre-edit-impact.sh",
+            "timeout": 10
           }
         ]
       }
@@ -22,7 +30,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .ariadne/hooks/post-edit.sh"
+            "command": "bash .ariadne/hooks/post-edit.sh",
+            "timeout": 15
           }
         ]
       },
@@ -31,7 +40,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .ariadne/hooks/post-test.sh"
+            "command": "bash .ariadne/hooks/post-test.sh",
+            "timeout": 10
           }
         ]
       }
@@ -41,7 +51,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .ariadne/hooks/stop-verify.sh"
+            "command": "bash .ariadne/hooks/stop-verify.sh",
+            "timeout": 60
           }
         ]
       }
