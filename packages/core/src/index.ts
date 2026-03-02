@@ -34,6 +34,8 @@ export { StructuralMetrics } from "./graph/metrics";
 export type { CouplingMetric, CycleInfo, CycleResult, PackageApiSurface, MetricsSnapshot, MetricsDiff } from "./graph/metrics";
 export { ContextCompiler } from "./graph/context";
 export type { ContextFileEntry, ContextResult, ContextOptions } from "./graph/context";
+export { ScopeAnalyzer } from "./graph/scope";
+export type { ScopeResult, ScopeFileEntry, ScopeSymbol, ScopeOptions, ScopeTier } from "./graph/scope";
 export { PreflightAnalyzer } from "./graph/preflight";
 export type { PreflightResult, PreflightSymbol, PreflightCallSite, PreflightBlastRadius, PreflightBoundary, PreflightOptions } from "./graph/preflight";
 export { computeRiskScore } from "./graph/risk";
