@@ -89,9 +89,26 @@ export function _buildRecommendations(report: CiReport): string[] {
 
   // Test gap: list top untested files by depth (closest first)
   if (report.riskBreakdown.testGap > 0.3) {
-    const testedPaths = new Set(report.testFiles.map((t) => t.path));
+    const testFilePaths = new Set(report.testFiles.map((t) => t.path));
+    // Build set of source files that have a co-located test file in testFiles
+    const coveredSources = new Set<string>();
+    for (const af of report.allAffectedFiles) {
+      if (af.path.match(/\.(test|spec)\./)) continue;
+      // Check if any test file matches this source file's co-located pattern
+      const base = af.path.replace(/\.[^.]+$/, "");
+      const ext = af.path.slice(af.path.lastIndexOf("."));
+      const dir = af.path.includes("/") ? af.path.slice(0, af.path.lastIndexOf("/")) : ".";
+      const name = af.path.includes("/") ? af.path.slice(af.path.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "") : base;
+      const candidates = [
+        `${dir}/${name}.test${ext}`, `${dir}/${name}.spec${ext}`,
+        `${dir}/__tests__/${name}.test${ext}`, `${dir}/__tests__/${name}.spec${ext}`,
+      ];
+      if (candidates.some((c) => testFilePaths.has(c))) {
+        coveredSources.add(af.path);
+      }
+    }
     const untested = report.allAffectedFiles
-      .filter((f) => !testedPaths.has(f.path) && !f.path.match(/\.(test|spec)\./))
+      .filter((f) => !testFilePaths.has(f.path) && !f.path.match(/\.(test|spec)\./) && !coveredSources.has(f.path))
       .sort((a, b) => a.depth - b.depth || a.path.localeCompare(b.path));
 
     if (untested.length > 0) {

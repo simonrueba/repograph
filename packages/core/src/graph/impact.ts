@@ -1,7 +1,30 @@
 import type { StoreQueries, OccurrenceRecord } from "../store/queries";
-import { basename } from "path";
+import { basename, dirname, extname } from "path";
 import { getSnippet, formatRange, createSnippetCache, isTestFile } from "./utils";
 import { computeRiskScore, type RiskCategory, type RiskBreakdown } from "./risk";
+
+/**
+ * Given a source file path (e.g. `src/commands/doctor.ts`), find a co-located
+ * test file in the known file set. Checks sibling and `__tests__/` patterns:
+ *   foo.ts → foo.test.ts, foo.spec.ts, __tests__/foo.test.ts, __tests__/foo.spec.ts
+ */
+function findColocatedTestFile(srcPath: string, knownFiles: Set<string>): string | null {
+  const ext = extname(srcPath);
+  const dir = dirname(srcPath);
+  const base = basename(srcPath, ext);
+
+  const candidates = [
+    `${dir}/${base}.test${ext}`,
+    `${dir}/${base}.spec${ext}`,
+    `${dir}/__tests__/${base}.test${ext}`,
+    `${dir}/__tests__/${base}.spec${ext}`,
+  ];
+
+  for (const c of candidates) {
+    if (knownFiles.has(c)) return c;
+  }
+  return null;
+}
 
 export interface ImpactResult {
   changedSymbols: { id: string; name: string; filePath: string }[];
@@ -400,11 +423,28 @@ export class ImpactAnalyzer {
       }
     }
 
+    // 6b. Detect co-located test files (e2e tests that run via subprocess,
+    //     not via import edges). For each affected source file, check if a
+    //     matching test file exists in the index (e.g. foo.ts → foo.test.ts
+    //     or __tests__/foo.test.ts). Track which source files are covered.
+    const testedPathSet = new Set(testFiles.map((t) => t.path));
+    const coveredSourcePaths = new Set<string>();
+    const allKnownFiles = this.store.getFilePaths();
+    for (const af of affectedFiles) {
+      if (isTestFile(af.path)) continue;
+      const colocated = findColocatedTestFile(af.path, allKnownFiles);
+      if (colocated && !testedPathSet.has(colocated)) {
+        testedPathSet.add(colocated);
+        testFiles.push({ path: colocated, relevance: "direct" });
+        coveredSourcePaths.add(af.path);
+      }
+    }
+
     // 7. Compute risk score
     const totalFiles = this.store.getFileCount();
     const testedPaths = new Set(testFiles.map((t) => t.path));
     const untestedCount = affectedFiles.filter(
-      (f) => !testedPaths.has(f.path) && !isTestFile(f.path),
+      (f) => !testedPaths.has(f.path) && !isTestFile(f.path) && !coveredSourcePaths.has(f.path),
     ).length;
 
     const boundaryProximity = publicSymbols.length > 0
